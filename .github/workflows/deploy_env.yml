@@ -1,0 +1,219 @@
+name: Deploy to Environment
+
+# Replaces CircleCI orb job: hmpps/deploy_env
+# Used by: hmpps-digital-prison-reporting-mi
+#
+# CircleCI source equivalent (hmpps-circleci-orb src/jobs/deploy_env.yml):
+#   deploy_env:
+#     executor: default_small
+#     steps:
+#       - checkout
+#       - k8s_setup           (authenticates to Cloud Platform k8s cluster)
+#       - install_helm
+#       - install_aws_cli
+#       - recall: APP_VERSION
+#       - show changelog (optional)
+#       - run: helm upgrade/install via deploy_env.sh
+#       - slack/notify (if slack_notification: true)
+#       - jira/notify  (if jira_update: true)
+#
+# k8s secrets required (auto-populated by Cloud Platform Terraform module):
+#   KUBE_CERT, KUBE_CLUSTER, KUBE_NAMESPACE, KUBE_TOKEN
+#
+# Approval gates (CircleCI type: approval) are handled by GitHub Environment
+# required reviewers — no extra workflow step needed.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target environment name — must match a GitHub Environment
+        type: string
+        required: true
+      app-version:
+        description: Docker image tag / app version to deploy (Build.<sha>)
+        type: string
+        required: true
+      helm-chart-name:
+        description: Helm chart directory name inside helm-dir
+        type: string
+        default: ''
+      release-name:
+        description: Helm release name
+        type: string
+        default: ''
+      helm-dir:
+        description: Directory containing helm charts
+        type: string
+        default: 'helm_deploy'
+      helm-additional-args:
+        description: Extra arguments passed to helm upgrade
+        type: string
+        default: ''
+      helm-timeout:
+        description: Helm upgrade --timeout value
+        type: string
+        default: '5m'
+      show-changelog:
+        description: Display version history before deploying
+        type: boolean
+        default: true
+      slack-notification:
+        description: Send Slack notification on deploy result
+        type: string
+        default: 'false'
+      slack-channel:
+        description: Slack channel for notifications
+        type: string
+        default: 'dpr_cicd_approvals'
+    secrets:
+      KUBE_CERT:
+        required: true
+      KUBE_CLUSTER:
+        required: true
+      KUBE_NAMESPACE:
+        required: true
+      KUBE_TOKEN:
+        required: true
+      HMPPS_SRE_SLACK_BOT_TOKEN:
+        required: false
+      NONPROD_RELEASES_SLACK_CHANNEL:
+        required: false
+      PROD_RELEASES_SLACK_CHANNEL:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    # The environment: key is what replaces CircleCI type: approval gates.
+    # When the GitHub Environment has required reviewers configured,
+    # GHA pauses here automatically until a reviewer approves.
+    environment: ${{ inputs.environment }}
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Resolve chart and release names ─────────────────────────────
+      # Matches CircleCI defaults:
+      #   chart_name:   ${CIRCLE_PROJECT_REPONAME}
+      #   release_name: PROJECT_NAME
+      - name: Resolve chart and release names
+        id: names
+        run: |
+          CHART="${{ inputs.helm-chart-name }}"
+          if [ -z "$CHART" ]; then
+            CHART="${{ github.event.repository.name }}"
+          fi
+          RELEASE="${{ inputs.release-name }}"
+          if [ -z "$RELEASE" ]; then
+            RELEASE="$CHART"
+          fi
+          echo "chart=$CHART"   >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+
+      # ── Install Helm ─────────────────────────────────────────────────
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      # ── Install kubectl ──────────────────────────────────────────────
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      # ── Authenticate to Cloud Platform k8s ──────────────────────────
+      # Matches CircleCI: k8s_setup command in hmpps orb
+      # Secrets auto-populated by Cloud Platform Terraform module
+      - name: Authenticate to Cloud Platform
+        run: |
+          echo "${{ secrets.KUBE_CERT }}" > /tmp/ca.crt
+          kubectl config set-cluster "${{ secrets.KUBE_CLUSTER }}" \
+            --certificate-authority=/tmp/ca.crt \
+            --server="https://${{ secrets.KUBE_CLUSTER }}"
+          kubectl config set-credentials deploy-user \
+            --token="${{ secrets.KUBE_TOKEN }}"
+          kubectl config set-context deploy \
+            --cluster="${{ secrets.KUBE_CLUSTER }}" \
+            --user=deploy-user \
+            --namespace="${{ secrets.KUBE_NAMESPACE }}"
+          kubectl config use-context deploy
+
+      # ── Show changelog (optional) ─────────────────────────────────────
+      # Matches CircleCI: show_changelog parameter
+      - name: Show version history
+        if: inputs.show-changelog == true
+        run: |
+          echo "Deploying version: ${{ inputs.app-version }}"
+          echo "Target environment: ${{ inputs.environment }}"
+          echo "Chart: ${{ steps.names.outputs.chart }}"
+          echo "Release: ${{ steps.names.outputs.release }}"
+          CURRENT=$(kubectl get deployment "${{ steps.names.outputs.release }}" \
+            -n "${{ secrets.KUBE_NAMESPACE }}" \
+            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "not deployed")
+          echo "Currently deployed: $CURRENT"
+
+      # ── Helm upgrade/install ─────────────────────────────────────────
+      # Matches CircleCI: deploy_env.sh script in hmpps orb
+      - name: Helm upgrade
+        run: |
+          helm upgrade "${{ steps.names.outputs.release }}" \
+            "${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}" \
+            --install \
+            --wait \
+            --timeout "${{ inputs.helm-timeout }}" \
+            --namespace "${{ secrets.KUBE_NAMESPACE }}" \
+            --values "${{ inputs.helm-dir }}/values-${{ inputs.environment }}.yaml" \
+            --set image.tag="${{ inputs.app-version }}" \
+            ${{ inputs.helm-additional-args }}
+
+      # ── Slack notification (prod only) ───────────────────────────────
+      # Matches CircleCI: slack_notification: true on prod deploys
+      # Always sends to central dps-releases channel for production
+      - name: Notify Slack — prod release (dps-releases)
+        if: |
+          always() &&
+          (inputs.environment == 'prod' || inputs.environment == 'production')
+        uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.HMPPS_SRE_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: "CVA3MKDTR"
+            text: "*${{ github.event.repository.name }}* version `${{ inputs.app-version }}` deployed to *${{ inputs.environment }}* — ${{ job.status == 'success' && ':white_check_mark:' || ':red_circle:' }}"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: "*${{ github.event.repository.name }}* version `${{ inputs.app-version }}` deploy to *${{ inputs.environment }}*"
+                accessory:
+                  type: button
+                  text:
+                    type: plain_text
+                    text: View run
+                  url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              - type: context
+                elements:
+                  - type: mrkdwn
+                    text: "Deploy ${{ job.status }}"
+
+      # Matches CircleCI: slack_notification: true + slack_channel_name param
+      - name: Notify Slack — team channel
+        if: |
+          always() &&
+          inputs.slack-notification == 'true' &&
+          secrets.NONPROD_RELEASES_SLACK_CHANNEL != '' || secrets.PROD_RELEASES_SLACK_CHANNEL != ''
+        uses: slackapi/slack-github-action@v2
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.HMPPS_SRE_SLACK_BOT_TOKEN }}
+          payload: |
+            channel: "${{ inputs.slack-channel }}"
+            text: "*${{ github.event.repository.name }}* version `${{ inputs.app-version }}` deployed to *${{ inputs.environment }}* — ${{ job.status == 'success' && ':white_check_mark:' || ':red_circle:' }}"

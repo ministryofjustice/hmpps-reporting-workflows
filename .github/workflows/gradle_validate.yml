@@ -1,0 +1,107 @@
+name: Gradle Validate
+
+# Replaces CircleCI custom job: validate
+# Used by: hmpps-digital-prison-reporting-mi
+#
+# CircleCI source equivalent:
+#   validate:
+#     executor:
+#       name: hmpps/java
+#       tag: "21.0"
+#     steps:
+#       - setup_remote_docker
+#       - checkout
+#       - restore_cache:
+#           keys:
+#             - gradle-{{ checksum "build.gradle.kts" }}
+#             - gradle-
+#       - run:
+#           command: ./gradlew check
+#       - save_cache:
+#           paths: [~/.gradle]
+#           key: gradle-{{ checksum "build.gradle.kts" }}
+#       - store_test_results:
+#           path: build/test-results
+#       - store_artifacts:
+#           path: build/reports/tests
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: JDK version — matches CircleCI hmpps/java executor tag "21.0"
+        type: string
+        default: '21'
+      gradle-check-command:
+        description: Gradle task to run for validation
+        type: string
+        default: 'check'
+      cache-key-file:
+        description: File used to generate the Gradle cache checksum key
+        type: string
+        default: 'build.gradle.kts'
+      test-results-path:
+        description: Path to JUnit XML test results (replaces store_test_results)
+        type: string
+        default: 'build/test-results'
+      reports-path:
+        description: Path to HTML test reports (replaces store_artifacts)
+        type: string
+        default: 'build/reports/tests'
+    secrets:
+      GRADLE_CACHE_ENCRYPTION_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Gradle validate
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────
+      # Matches CircleCI: checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Java setup ───────────────────────────────────────────────────
+      # Matches CircleCI: executor hmpps/java tag "21.0"
+      - name: Setup Java ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java-version }}
+
+      # ── Gradle cache + run ───────────────────────────────────────────
+      # Matches CircleCI: restore_cache gradle-{{ checksum "build.gradle.kts" }}
+      #                   save_cache    gradle-{{ checksum "build.gradle.kts" }}
+      # gradle/actions/setup-gradle handles save + restore automatically
+      - name: Setup Gradle with dependency cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-encryption-key: ${{ secrets.GRADLE_CACHE_ENCRYPTION_KEY }}
+
+      # Matches CircleCI: run: command: ./gradlew check
+      - name: Run Gradle check
+        run: ./gradlew ${{ inputs.gradle-check-command }}
+
+      # ── Upload results ───────────────────────────────────────────────
+      # Matches CircleCI: store_test_results path: build/test-results
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ${{ inputs.test-results-path }}
+          if-no-files-found: ignore
+
+      # Matches CircleCI: store_artifacts path: build/reports/tests
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: ${{ inputs.reports-path }}
+          if-no-files-found: ignore
