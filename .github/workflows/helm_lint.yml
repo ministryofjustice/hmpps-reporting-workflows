@@ -1,0 +1,92 @@
+name: Helm Lint
+
+# Replaces CircleCI orb job: hmpps/helm_lint
+# Used by: hmpps-digital-prison-reporting-mi
+#
+# CircleCI source equivalent (hmpps-circleci-orb src/jobs/helm_lint.yml):
+#   helm_lint:
+#     executor: default_small
+#     steps:
+#       - checkout
+#       - install_helm
+#       - run:
+#           name: Run helm lint
+#           command: |
+#             helm dependency update << parameters.chart_name >>
+#             helm lint << parameters.chart_name >> \
+#               --values=values-<< parameters.env >>.yaml \
+#               << parameters.helm_additional_args >>
+#           working_directory: << parameters.helm_dir >>
+#
+# Calls in hmpps-digital-prison-reporting-mi CircleCI config:
+#   hmpps/helm_lint: (no extra params)           → chart: repo name, env: dev
+#   hmpps/helm_lint: chart_name: hmpps-probation-mi-api, env: probation-dev
+#   hmpps/helm_lint: chart_name: hmpps-probation-mi-api, env: probation-test
+#   hmpps/helm_lint: chart_name: hmpps-probation-mi-api, env: probation-preprod
+#   hmpps/helm_lint: chart_name: hmpps-probation-mi-api, env: probation-prod
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Environment name — used to select values-<env>.yaml file
+        type: string
+        default: 'dev'
+      chart-name:
+        description: Helm chart directory name inside helm-dir
+        type: string
+        default: ''
+      helm-dir:
+        description: Directory containing the Helm chart(s)
+        type: string
+        default: 'helm_deploy'
+      helm-additional-args:
+        description: Extra arguments passed to helm lint
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  helm-lint:
+    name: Helm lint — ${{ inputs.chart-name != '' && inputs.chart-name || github.event.repository.name }} (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Install Helm ─────────────────────────────────────────────────
+      # Matches CircleCI: install_helm command in hmpps orb
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: latest
+
+      # ── Resolve chart name ───────────────────────────────────────────
+      # Matches CircleCI default: chart_name: ${CIRCLE_PROJECT_REPONAME}
+      - name: Resolve chart name
+        id: chart
+        run: |
+          CHART="${{ inputs.chart-name }}"
+          if [ -z "$CHART" ]; then
+            CHART="${{ github.event.repository.name }}"
+          fi
+          echo "name=$CHART" >> "$GITHUB_OUTPUT"
+
+      # ── Helm dependency update + lint ────────────────────────────────
+      # Matches CircleCI:
+      #   helm dependency update << parameters.chart_name >>
+      #   helm lint << parameters.chart_name >> --values=values-<env>.yaml
+      - name: Helm dependency update
+        working-directory: ${{ inputs.helm-dir }}
+        run: helm dependency update ${{ steps.chart.outputs.name }}
+
+      - name: Helm lint
+        working-directory: ${{ inputs.helm-dir }}
+        run: |
+          helm lint ${{ steps.chart.outputs.name }} \
+            --values values-${{ inputs.environment }}.yaml \
+            ${{ inputs.helm-additional-args }}

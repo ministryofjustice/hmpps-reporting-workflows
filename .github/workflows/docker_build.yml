@@ -1,0 +1,129 @@
+name: Docker Build and Push
+
+# Replaces CircleCI custom job: build_multiplatform_docker_job
+# Used by: hmpps-digital-prison-reporting-mi
+#
+# CircleCI source equivalent:
+#   build_multiplatform_docker_job:
+#     docker:
+#       - image: cimg/base:stable
+#     resource_class: small
+#     steps:
+#       - checkout
+#       - setup_remote_docker: docker_layer_caching: true
+#       - mem/remember: APP_VERSION = "Build.${CIRCLE_SHA1}"
+#       - docker buildx build --platform linux/amd64,linux/arm64
+#           --tag "${IMAGE_NAME}:${APP_VERSION}"
+#           --tag "${IMAGE_NAME}:latest"
+#           --push
+#
+# Key change: image registry changed from quay.io/hmpps/ to ghcr.io/ministryofjustice/
+# The app version format Build.<SHA> is preserved to match existing helm values expectations.
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile-dir:
+        description: Directory containing the Dockerfile
+        type: string
+        default: '.'
+      docker-registry:
+        description: Container registry
+        type: string
+        default: 'ghcr.io'
+      registry-org:
+        description: Registry organisation
+        type: string
+        default: 'ministryofjustice'
+      additional-docker-build-args:
+        description: Extra docker buildx build arguments (e.g. --secret, --build-arg)
+        type: string
+        default: ''
+      push:
+        description: Whether to push the image (set false for dry-run)
+        type: boolean
+        default: true
+    outputs:
+      app-version:
+        description: The app version tag that was built and pushed
+        value: ${{ jobs.build.outputs.app_version }}
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Build multi-arch Docker image
+    runs-on: ubuntu-latest
+
+    outputs:
+      app_version: ${{ steps.version.outputs.app_version }}
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── App version ──────────────────────────────────────────────────
+      # Matches CircleCI: mem/remember APP_VERSION = "Build.${CIRCLE_SHA1}"
+      - name: Set app version
+        id: version
+        run: |
+          APP_VERSION="Build.${{ github.sha }}"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
+      # ── Docker registry login ────────────────────────────────────────
+      # Matches CircleCI: docker login -u="${QUAYIO_USERNAME}" -p="${QUAYIO_PASSWORD}" quay.io
+      # Changed: GHCR login using GITHUB_TOKEN (no separate credentials needed)
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.docker-registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Multi-arch buildx setup ──────────────────────────────────────
+      # Matches CircleCI: docker buildx create --platform linux/arm64,linux/amd64
+      - name: Set up QEMU (multi-arch support)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+
+      # ── Build and push ───────────────────────────────────────────────
+      # Matches CircleCI: docker buildx build
+      #   --platform linux/amd64,linux/arm64 --pull --progress plain
+      #   --tag "${IMAGE_NAME}:${APP_VERSION}"
+      #   --tag "${IMAGE_NAME}:latest"
+      #   --label maintainer, app.version, build.version, build.gitref
+      #   --push
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.dockerfile-dir }}
+          platforms: linux/amd64,linux/arm64
+          pull: true
+          push: ${{ inputs.push }}
+          tags: |
+            ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:${{ steps.version.outputs.app_version }}
+            ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:latest
+          labels: |
+            maintainer=dps-hmpps@digital.justice.gov.uk
+            app.version=${{ steps.version.outputs.app_version }}
+            build.version=${{ steps.version.outputs.app_version }}
+            build.gitref=${{ github.sha }}
+          build-args: |
+            BUILD_NUMBER=${{ steps.version.outputs.app_version }}
+            GIT_REF=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
+            ${{ inputs.additional-docker-build-args }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
