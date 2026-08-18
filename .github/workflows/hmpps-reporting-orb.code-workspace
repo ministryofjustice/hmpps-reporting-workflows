@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../../../hmpps-reporting-orb"
+		},
+		{
+			"name": "Digital-Repo",
+			"path": "../../.."
+		}
+	],
+	"settings": {}
+}
