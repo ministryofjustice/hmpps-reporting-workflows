@@ -206,10 +206,7 @@ jobs:
 
       # Matches CircleCI: slack_notification: true + slack_channel_name param
       - name: Notify Slack — team channel
-        if: |
-          always() &&
-          inputs.slack-notification == 'true' &&
-          secrets.NONPROD_RELEASES_SLACK_CHANNEL != '' || secrets.PROD_RELEASES_SLACK_CHANNEL != ''
+        if: always() && inputs.slack-notification == 'true'
         uses: slackapi/slack-github-action@v2
         with:
           method: chat.postMessage
