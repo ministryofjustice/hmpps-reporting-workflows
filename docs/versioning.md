@@ -77,7 +77,7 @@ silently-changed pipeline.
 ## Upgrade process for consumers
 
 1. Read the changelog / PR history for the target tag.
-2. Bump the `uses: ministryofjustice/HMPPS-REPORTING-WORKFLOWS/.github/workflows/...@vX`
+2. Bump the `uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/...@vX`
    refs in the repo's thin caller workflow files.
 3. Run the pipeline on a feature branch / PR (not `main`) and confirm the
    job graph, approval gates, and deploy behaviour are unchanged or changed

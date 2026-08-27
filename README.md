@@ -1,4 +1,4 @@
-# HMPPS-REPORTING-WORKFLOWS
+# hmpps-reporting-workflows
 
 Central GitHub Actions library for HMPPS Digital Prison Reporting repos —
 the CircleCI-orb equivalent of `hmpps-reporting-orb`, but for GitHub
