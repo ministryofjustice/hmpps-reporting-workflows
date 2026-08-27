@@ -18,9 +18,11 @@ inputs:
   apply-command:
     description: >-
       Shell command that rewrites the caller's build file(s) to reference
-      `current-version`. Run via `bash -c`. Typical examples:
-        Gradle:  perl -pi -e 's|...:\d+\.\d+\.\d+"|...:${{ current-version }}"|' build.gradle.kts
-        Node:    npm install some-lib@${{ current-version }} --save-exact
+      the current-version input's value. Run via `bash -c`. Typical
+      examples (with <VERSION> standing in for the interpolated
+      current-version value):
+        Gradle:  perl -pi -e 's|...:\d+\.\d+\.\d+"|...:<VERSION>"|' build.gradle.kts
+        Node:    npm install some-lib@<VERSION> --save-exact
     required: true
   files-to-commit:
     description: Space-separated list of files to `git add` before committing
