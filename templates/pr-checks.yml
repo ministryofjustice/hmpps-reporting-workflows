@@ -1,0 +1,24 @@
+# ============================================================================
+# Copy-paste starter: PR checks thin caller
+# ============================================================================
+# Copy this file into a consuming repo at:
+#   .github/workflows/pr-raised.yml
+#
+# Replaces inline checkout/setup/ktlint/jacoco steps with a call into the
+# shared reusable workflow. Gradle-only until the Node variant lands
+# (Phase 2 — see hmpps-reporting-workflows migration plan Task 12).
+# ============================================================================
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  checks:
+    uses: ministryofjustice/HMPPS-REPORTING-WORKFLOWS/.github/workflows/pr_checks.yml@v1
+    secrets: inherit
+    with:
+      java-version: '21'
+      java-distribution: 'corretto'

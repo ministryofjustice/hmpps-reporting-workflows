@@ -1,0 +1,101 @@
+name: Upstream security actions drift check
+
+# Guards against the accepted risk documented in the migration plan: since
+# every consuming repo now reaches ministryofjustice/hmpps-github-actions
+# only indirectly (through the security_*.yml proxies in this repo, each
+# pinned to an explicit ref), a security-relevant release of
+# hmpps-github-actions would otherwise go unnoticed until someone manually
+# checks. This runs weekly and opens/updates an issue when the pinned ref
+# in any proxy workflow is behind the latest upstream release tag.
+#
+# Chosen mechanism: a small scheduled Action rather than a Renovate custom
+# manager, because the thing that needs bumping is a `uses:` ref embedded
+# inside *this* repo's own reusable workflow files (a pattern Renovate's
+# github-actions manager already understands for `uses:` lines — see note
+# below) and because we want a single, easily-audited step here rather than
+# splitting the "detect" and "notify" concerns between Renovate config and
+# a bespoke script.
+#
+# NOTE: `ministryofjustice/hmpps-github-actions` refs below are already
+# discoverable by Renovate's default github-actions manager (it understands
+# `uses: owner/repo/path@ref` the same as any other action reference) if
+# this repo enables Renovate — MI UI's existing renovate.json is a
+# reusable template for that. This workflow is a deliberately simple
+# fallback/complement that works even without Renovate onboarding, and
+# proactively opens a tracking issue (Renovate would only open a PR against
+# a ref it can find and safely rewrite — a small comment-and-issue guard
+# here is a cheap belt-and-braces addition either way).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * MON' # Weekly, Monday morning
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-drift:
+    name: Check hmpps-github-actions version drift
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Find pinned refs vs latest release
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          LATEST=$(gh release view --repo ministryofjustice/hmpps-github-actions --json tagName -q .tagName)
+          echo "Latest upstream release: $LATEST"
+
+          PINNED=$(grep -rho 'ministryofjustice/hmpps-github-actions/[^ ]*@[A-Za-z0-9._-]*' .github/workflows/security_*.yml | sort -u)
+          echo "Pinned refs found:"
+          echo "$PINNED"
+
+          STALE=""
+          while IFS= read -r line; do
+            ref="${line##*@}"
+            if [ "$ref" != "$LATEST" ]; then
+              STALE="${STALE}${line}\n"
+            fi
+          done <<< "$PINNED"
+
+          if [ -n "$STALE" ]; then
+            echo "stale=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "body<<EOF"
+              echo "The following proxy workflows pin an older"
+              echo "\`ministryofjustice/hmpps-github-actions\` ref than the"
+              echo "latest upstream release (\`$LATEST\`):"
+              echo ""
+              echo -e "$STALE"
+              echo ""
+              echo "Review the upstream changelog (especially for"
+              echo "security-relevant fixes) and bump the pinned ref in the"
+              echo "affected \`security_*.yml\` file(s), following"
+              echo "docs/versioning.md."
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "stale=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update tracking issue
+        if: steps.check.outputs.stale == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ steps.check.outputs.body }}
+        run: |
+          set -euo pipefail
+          TITLE="hmpps-github-actions drift detected"
+          EXISTING=$(gh issue list --search "$TITLE in:title" --state open --json number -q '.[0].number' || true)
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label "security"
+          fi
