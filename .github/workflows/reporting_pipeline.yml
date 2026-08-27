@@ -28,6 +28,18 @@ name: Reporting pipeline (dual-track)
 # calls, so `app-version` is threaded explicitly as a job output at every
 # layer that needs it (this workflow itself has no outputs — it is the top
 # of the call chain once a consuming repo's thin caller invokes it).
+#
+# IMPORTANT — why the nested `uses:` below are NOT relative (`./...`):
+# GitHub Actions resolves a relative reusable-workflow reference against the
+# repository context of the *original top-level caller*, not the repository
+# that physically contains the file using the relative path. Since this
+# workflow is itself invoked cross-repo (e.g. from
+# hmpps-digital-prison-reporting-mi's pipeline.yml), a relative `./` path
+# here would be looked up in the caller's repo and fail with
+# "workflow was not found". So every nested call below uses the fully
+# qualified `ministryofjustice/hmpps-reporting-workflows/...@vX` form,
+# pinned to the same tag as this file. Bumping to a new major version means
+# updating these refs too, as part of that release (see docs/versioning.md).
 
 on:
   workflow_call:
@@ -142,7 +154,7 @@ jobs:
   # ── Gradle validate ──────────────────────────────────────────────────
   gradle_validate:
     name: Gradle validate
-    uses: ./.github/workflows/gradle_validate.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/gradle_validate.yml@v1
     secrets: inherit
     with:
       java-version: ${{ inputs.java-version }}
@@ -154,7 +166,7 @@ jobs:
   # ── Helm lint — track 1 (dev only, matches existing MI API shape) ────
   helm_lint_track1:
     name: Helm lint track 1 (dev)
-    uses: ./.github/workflows/helm_lint.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
       environment: ${{ inputs.track1-dev-env }}
       chart-name: ${{ inputs.track1-chart-name }}
@@ -164,7 +176,7 @@ jobs:
   helm_lint_track2_dev:
     name: Helm lint track 2 (dev)
     if: inputs.enable-track2
-    uses: ./.github/workflows/helm_lint.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
       environment: ${{ inputs.track2-dev-env }}
       chart-name: ${{ inputs.track2-chart-name }}
@@ -173,7 +185,7 @@ jobs:
   helm_lint_track2_test:
     name: Helm lint track 2 (test)
     if: inputs.enable-track2
-    uses: ./.github/workflows/helm_lint.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
       environment: ${{ inputs.track2-test-env }}
       chart-name: ${{ inputs.track2-chart-name }}
@@ -182,7 +194,7 @@ jobs:
   helm_lint_track2_preprod:
     name: Helm lint track 2 (preprod)
     if: inputs.enable-track2
-    uses: ./.github/workflows/helm_lint.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
       environment: ${{ inputs.track2-preprod-env }}
       chart-name: ${{ inputs.track2-chart-name }}
@@ -191,7 +203,7 @@ jobs:
   helm_lint_track2_prod:
     name: Helm lint track 2 (prod)
     if: inputs.enable-track2
-    uses: ./.github/workflows/helm_lint.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
       environment: ${{ inputs.track2-prod-env }}
       chart-name: ${{ inputs.track2-chart-name }}
@@ -223,7 +235,7 @@ jobs:
       - helm_lint_track2_preprod
       - helm_lint_track2_prod
       - app_version
-    uses: ./.github/workflows/docker_build.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@v1
     secrets: inherit
     with:
       dockerfile-dir: ${{ inputs.dockerfile-dir }}
@@ -239,7 +251,7 @@ jobs:
     name: Deploy track 1 → dev
     if: github.ref == inputs.deploy-ref
     needs: [build_docker, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track1-dev-env }}
@@ -256,7 +268,7 @@ jobs:
     name: Deploy track 1 → test
     if: github.ref == inputs.deploy-ref
     needs: [deploy_track1_dev, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track1-test-env }}
@@ -271,7 +283,7 @@ jobs:
     name: Deploy track 1 → preprod
     if: github.ref == inputs.deploy-ref
     needs: [deploy_track1_dev, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track1-preprod-env }}
@@ -286,7 +298,7 @@ jobs:
     name: Deploy track 1 → prod
     if: github.ref == inputs.deploy-ref
     needs: [deploy_track1_preprod, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track1-prod-env }}
@@ -312,7 +324,7 @@ jobs:
       needs.helm_lint_track2_dev.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [build_docker, helm_lint_track2_dev, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track2-dev-env }}
@@ -333,7 +345,7 @@ jobs:
       needs.helm_lint_track2_test.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [deploy_track2_dev, helm_lint_track2_test, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track2-test-env }}
@@ -354,7 +366,7 @@ jobs:
       needs.helm_lint_track2_preprod.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [deploy_track2_dev, helm_lint_track2_preprod, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track2-preprod-env }}
@@ -375,7 +387,7 @@ jobs:
       needs.helm_lint_track2_prod.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [deploy_track2_preprod, helm_lint_track2_prod, app_version]
-    uses: ./.github/workflows/deploy_env.yml
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.track2-prod-env }}
