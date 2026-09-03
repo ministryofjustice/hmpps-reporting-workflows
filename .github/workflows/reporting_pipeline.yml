@@ -255,7 +255,7 @@ jobs:
       needs.build_docker.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [build_docker, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@feat/dhs-702-705
     secrets: inherit
     with:
       environment: ${{ inputs.track1-dev-env }}
