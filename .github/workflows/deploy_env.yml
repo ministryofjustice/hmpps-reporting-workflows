@@ -177,8 +177,20 @@ jobs:
           helm dependency build \
             "${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}"
 
+       # ── Resolve image tag override path ──────────────────────────────
+      # Matches CircleCI's deploy_env.sh: charts using generic-service as a
+      # dependency need generic-service.image.tag, not image.tag.
+      - name: Resolve image tag override path
+        id: image-tag
+        run: |
+          CHART_DIR="${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}"
+          if helm dependency list "$CHART_DIR" | grep -q generic-service; then
+            echo "set-arg=generic-service.image.tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "set-arg=image.tag" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── Helm upgrade/install ─────────────────────────────────────────
-      # Matches CircleCI: deploy_env.sh script in hmpps orb
       - name: Helm upgrade
         run: |
           helm upgrade "${{ steps.names.outputs.release }}" \
@@ -188,7 +200,7 @@ jobs:
             --timeout "${{ inputs.helm-timeout }}" \
             --namespace "${{ secrets.KUBE_NAMESPACE }}" \
             --values "${{ inputs.helm-dir }}/values-${{ inputs.environment }}.yaml" \
-            --set image.tag="${{ inputs.app-version }}" \
+            --set "${{ steps.image-tag.outputs.set-arg }}=${{ inputs.app-version }}" \
             ${{ inputs.helm-additional-args }}
 
       # ── Slack notification (prod only) ───────────────────────────────
