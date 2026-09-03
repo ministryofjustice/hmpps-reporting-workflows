@@ -117,7 +117,7 @@ jobs:
 
           RELEASE="${{ inputs.release-name }}"
           if [ -z "$RELEASE" ]; then
-            RELEASE="$CHART"
+            RELEASE="${CHART}-${{ inputs.environment }}"
           fi
 
           echo "chart=$CHART" >> "$GITHUB_OUTPUT"
