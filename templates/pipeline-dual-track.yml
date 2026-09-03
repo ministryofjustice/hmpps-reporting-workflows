@@ -1,0 +1,60 @@
+# ============================================================================
+# Copy-paste starter: dual-track pipeline thin caller
+# ============================================================================
+# Copy this file into a consuming repo at:
+#   .github/workflows/pipeline.yml
+#
+# It replaces per-repo orchestration entirely — all real logic (validate,
+# helm lint, docker build, deploy, approval gates) lives in
+# hmpps-reporting-workflows/.github/workflows/reporting_pipeline.yml.
+# This file only needs to supply the values that differ per repo: chart
+# names, release names, and (if not both tracks are needed) toggles.
+#
+# PREREQUISITES
+# ─────────────────────────────────────────────────────────────────────────
+# 1. Cloud Platform Terraform PR raised and merged — populates GitHub
+#    Environments with KUBE_CERT, KUBE_CLUSTER, KUBE_NAMESPACE, KUBE_TOKEN
+# 2. GitHub Environments created matching the *-env inputs below.
+# 3. Required reviewers set on every environment that should gate (e.g.
+#    test, preprod, prod, probation-test, probation-preprod, probation-prod).
+# 4. HMPPS_SRE_SLACK_BOT_TOKEN set as an org/repo secret.
+# 5. Pin the `@vX` ref below to a released tag — never `@main`. See
+#    hmpps-reporting-workflows/docs/versioning.md.
+# ============================================================================
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  pipeline:
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/reporting_pipeline.yml@v1
+    secrets: inherit
+    with:
+      # ── Build stack — override only if this repo's build differs ──────
+      java-version: '21'
+      gradle-check-command: 'check'
+
+      # ── Track 1 (this repo's primary chart) ────────────────────────────
+      # Leave chart/release names empty to default to the repo name.
+      track1-chart-name: ''
+      track1-release-name: ''
+
+      # ── Track 2 — set enable-track2: false if this repo has only 1 track
+      enable-track2: true
+      track2-chart-name: 'CHANGE_ME'
+      track2-release-name: 'CHANGE_ME'
+
+      slack-channel: 'dpr_cicd_approvals'

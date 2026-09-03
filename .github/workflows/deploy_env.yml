@@ -66,6 +66,7 @@ on:
         description: Slack channel for notifications
         type: string
         default: 'dpr_cicd_approvals'
+
     secrets:
       KUBE_CERT:
         required: true
@@ -89,6 +90,7 @@ jobs:
   deploy:
     name: Deploy to ${{ inputs.environment }}
     runs-on: ubuntu-latest
+
     # The environment: key is what replaces CircleCI type: approval gates.
     # When the GitHub Environment has required reviewers configured,
     # GHA pauses here automatically until a reviewer approves.
@@ -101,7 +103,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ── Resolve chart and release names ─────────────────────────────
+      # ── Resolve chart and release names ──────────────────────────────
       # Matches CircleCI defaults:
       #   chart_name:   ${CIRCLE_PROJECT_REPONAME}
       #   release_name: PROJECT_NAME
@@ -112,11 +114,13 @@ jobs:
           if [ -z "$CHART" ]; then
             CHART="${{ github.event.repository.name }}"
           fi
+
           RELEASE="${{ inputs.release-name }}"
           if [ -z "$RELEASE" ]; then
-            RELEASE="$CHART"
+            RELEASE="${CHART}-${{ inputs.environment }}"
           fi
-          echo "chart=$CHART"   >> "$GITHUB_OUTPUT"
+
+          echo "chart=$CHART" >> "$GITHUB_OUTPUT"
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
 
       # ── Install Helm ─────────────────────────────────────────────────
@@ -129,24 +133,28 @@ jobs:
       - name: Install kubectl
         uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
 
-      # ── Authenticate to Cloud Platform k8s ──────────────────────────
+      # ── Authenticate to Cloud Platform k8s ───────────────────────────
       # Matches CircleCI: k8s_setup command in hmpps orb
       # Secrets auto-populated by Cloud Platform Terraform module
       - name: Authenticate to Cloud Platform
         run: |
           echo "${{ secrets.KUBE_CERT }}" > /tmp/ca.crt
+
           kubectl config set-cluster "${{ secrets.KUBE_CLUSTER }}" \
             --certificate-authority=/tmp/ca.crt \
             --server="https://${{ secrets.KUBE_CLUSTER }}"
+
           kubectl config set-credentials deploy-user \
             --token="${{ secrets.KUBE_TOKEN }}"
+
           kubectl config set-context deploy \
             --cluster="${{ secrets.KUBE_CLUSTER }}" \
             --user=deploy-user \
             --namespace="${{ secrets.KUBE_NAMESPACE }}"
+
           kubectl config use-context deploy
 
-      # ── Show changelog (optional) ─────────────────────────────────────
+      # ── Show changelog (optional) ────────────────────────────────────
       # Matches CircleCI: show_changelog parameter
       - name: Show version history
         if: inputs.show-changelog == true
@@ -155,13 +163,34 @@ jobs:
           echo "Target environment: ${{ inputs.environment }}"
           echo "Chart: ${{ steps.names.outputs.chart }}"
           echo "Release: ${{ steps.names.outputs.release }}"
+
           CURRENT=$(kubectl get deployment "${{ steps.names.outputs.release }}" \
             -n "${{ secrets.KUBE_NAMESPACE }}" \
-            -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "not deployed")
+            -o jsonpath='{.spec.template.spec.containers[0].image}' \
+            2>/dev/null || echo "not deployed")
+
           echo "Currently deployed: $CURRENT"
 
+      # ── Build Helm dependencies ──────────────────────────────────────
+      - name: Build Helm dependencies
+        run: |
+          helm dependency build \
+            "${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}"
+
+       # ── Resolve image tag override path ──────────────────────────────
+      # Matches CircleCI's deploy_env.sh: charts using generic-service as a
+      # dependency need generic-service.image.tag, not image.tag.
+      - name: Resolve image tag override path
+        id: image-tag
+        run: |
+          CHART_DIR="${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}"
+          if helm dependency list "$CHART_DIR" | grep -q generic-service; then
+            echo "set-arg=generic-service.image.tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "set-arg=image.tag" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── Helm upgrade/install ─────────────────────────────────────────
-      # Matches CircleCI: deploy_env.sh script in hmpps orb
       - name: Helm upgrade
         run: |
           helm upgrade "${{ steps.names.outputs.release }}" \
@@ -171,7 +200,7 @@ jobs:
             --timeout "${{ inputs.helm-timeout }}" \
             --namespace "${{ secrets.KUBE_NAMESPACE }}" \
             --values "${{ inputs.helm-dir }}/values-${{ inputs.environment }}.yaml" \
-            --set image.tag="${{ inputs.app-version }}" \
+            --set "${{ steps.image-tag.outputs.set-arg }}=${{ inputs.app-version }}" \
             ${{ inputs.helm-additional-args }}
 
       # ── Slack notification (prod only) ───────────────────────────────

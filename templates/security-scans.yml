@@ -1,0 +1,55 @@
+# ============================================================================
+# Copy-paste starter: security scan thin callers
+# ============================================================================
+# Copy the jobs relevant to this repo's stack into separate files under
+# .github/workflows/ in the consuming repo (one file per scan, matching the
+# names below), OR keep them combined here if the repo prefers a single
+# scheduled workflow file — GHA does not require 1:1 file-per-scan.
+#
+# All scans proxy through hmpps-reporting-workflows so consuming repos never
+# reference ministryofjustice/hmpps-github-actions directly. Pin @vX to a
+# released tag, see docs/versioning.md.
+# ============================================================================
+
+# ---- security_codeql_actions.yml -------------------------------------------
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "19 6 * * MON-FRI" # Every weekday
+
+jobs:
+  security-codeql-actions-check:
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_codeql_actions.yml@v1
+    with:
+      channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+    secrets: inherit
+
+# ---- security_owasp.yml (Java/Gradle stacks only) --------------------------
+#   uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_owasp.yml@v1
+#   with:
+#     channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+#     nvd_feed_version: "2"
+#     java_version: "21"
+#   secrets: inherit
+
+# ---- security_npm_dependency.yml (Node stacks only) ------------------------
+#   uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_npm_dependency.yml@v1
+#   with:
+#     channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+#   secrets: inherit
+
+# ---- security_veracode_pipeline_scan.yml -----------------------------------
+#   uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_veracode_pipeline_scan.yml@v1
+#   with:
+#     channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+#   secrets: inherit
+
+# ---- security_veracode_policy_scan.yml -------------------------------------
+#   uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_veracode_policy_scan.yml@v1
+#   with:
+#     channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+#   secrets: inherit

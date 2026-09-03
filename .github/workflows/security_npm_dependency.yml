@@ -1,0 +1,27 @@
+name: Security npm dependency check (proxy)
+
+# Thin wrapper around ministryofjustice/hmpps-github-actions for Node
+# stacks. Scaffolded in Phase 1 alongside the other proxies (same
+# hmpps-github-actions dependency, same pinning rationale as
+# security_codeql_actions.yml); first real caller is MI UI in Phase 2
+# (plan Task 13).
+
+on:
+  workflow_call:
+    inputs:
+      channel_id:
+        type: string
+        default: 'NO_SLACK'
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  proxy:
+    name: Project security npm dependency check
+    uses: ministryofjustice/hmpps-github-actions/.github/workflows/security_npm_dependency.yml@v2
+    with:
+      channel_id: ${{ inputs.channel_id }}
+    secrets: inherit

@@ -1,0 +1,48 @@
+# ============================================================================
+# Copy-paste starter: bump shared library version
+# ============================================================================
+# Copy this file into a consuming repo at:
+#   .github/workflows/bump-lib-version.yml
+#
+# The git branch/commit/tag/PR steps are centrally owned in
+# actions/bump-lib-version/action.yml. This file only supplies the
+# stack-specific "how do I find the current version" step and the
+# "how do I apply it" command.
+#
+# GRADLE/MAVEN VARIANT (shown below — e.g. hmpps-digital-prison-reporting-mi)
+# NODE VARIANT (Phase 2 — e.g. hmpps-digital-prison-reporting-mi-ui):
+#   replace the "Get current version" step with:
+#     CURRENT_VERSION=$(npm view @ministryofjustice/hmpps-digital-prison-reporting-frontend version)
+#   and set apply-command to:
+#     npm install @ministryofjustice/hmpps-digital-prison-reporting-frontend@^${{ steps.get-version.outputs.current_version }} --save
+#   and files-to-commit to: package.json package-lock.json
+# ============================================================================
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+      contents: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Get current library version
+        id: get-version
+        run: |
+          CURRENT_VERSION=$(curl -s --request GET https://repo1.maven.org/maven2/uk/gov/justice/service/hmpps/hmpps-digital-prison-reporting-lib/maven-metadata.xml | grep -oP '(?<=<version>)[^<]+' | grep -v -e '2024-02-27' -e '2024-02-28' | tail -n1)
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Bump library version
+        uses: ministryofjustice/hmpps-reporting-workflows/actions/bump-lib-version@v1
+        with:
+          current-version: ${{ steps.get-version.outputs.current_version }}
+          apply-command: >-
+            perl -pi -e 's|implementation\("uk.gov.justice.service.hmpps:hmpps-digital-prison-reporting-lib:\d+\.\d+\.\d+"\)|implementation("uk.gov.justice.service.hmpps:hmpps-digital-prison-reporting-lib:${{ steps.get-version.outputs.current_version }}")|' build.gradle.kts
+          files-to-commit: build.gradle.kts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
