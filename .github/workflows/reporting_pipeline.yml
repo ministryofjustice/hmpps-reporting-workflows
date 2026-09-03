@@ -249,7 +249,11 @@ jobs:
 
   deploy_track1_dev:
     name: Deploy track 1 → dev
-    if: github.ref == inputs.deploy-ref
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      needs.build_docker.result == 'success' &&
+      needs.app_version.result == 'success'
     needs: [build_docker, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
