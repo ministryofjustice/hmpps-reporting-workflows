@@ -1,0 +1,65 @@
+name: PR checks
+
+# Reusable workflow replacing the inline `pr-raised.yml` logic that used to
+# be duplicated per consuming repo. Gradle-only for Phase 1 — a `language`
+# toggle (gradle | node) is deferred to Phase 2 once the Node lint/coverage
+# steps for MI UI are known (see Task 12 in the migration plan).
+#
+# Consuming repo's pr-raised.yml becomes a thin caller:
+#   on: pull_request: {types: [opened, synchronize]}
+#   jobs: checks: {uses: .../pr_checks.yml@v1, secrets: inherit}
+
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: JDK version for ktlintFormat / jacoco steps
+        type: string
+        default: '21'
+      java-distribution:
+        description: JDK distribution
+        type: string
+        default: 'corretto'
+      ktlint-task:
+        description: Gradle task that auto-fixes lint issues
+        type: string
+        default: 'ktlintFormat'
+      jacoco-task:
+        description: Gradle task that produces the coverage summary
+        type: string
+        default: 'jacocoTestReport'
+
+permissions: {}
+
+jobs:
+  checks:
+    name: PR checks (Gradle)
+    runs-on: ubuntu-latest
+
+    permissions:
+      pull-requests: write
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: ${{ inputs.java-distribution }}
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+
+      - name: Add linting fixes
+        run: ./gradlew ${{ inputs.ktlint-task }}
+
+      - name: Calculate test coverage
+        id: calculate-test-coverage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./gradlew ${{ inputs.jacoco-task }} > logs.txt
+          gh pr comment ${{ github.event.pull_request.number }} --body "$(grep 'Test Coverage:' logs.txt -A6)"

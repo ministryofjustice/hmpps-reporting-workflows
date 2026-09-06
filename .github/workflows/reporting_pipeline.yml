@@ -1,0 +1,404 @@
+name: Reporting pipeline (dual-track)
+
+# High-level orchestrator for the CircleCI-orb-equivalent dual-track,
+# approval-gated deploy topology shared by hmpps-digital-prison-reporting-mi
+# (Phase 1) and hmpps-digital-prison-reporting-mi-ui (Phase 2, via toggles —
+# see Task 11 in the migration plan).
+#
+# Track 1 — main API:       dev → [approval] → {test, preprod} (parallel)
+#                                              → prod (after preprod)
+# Track 2 — probation API:  probation-dev → [approval] →
+#                                              {probation-test, probation-preprod}
+#                                              → probation-prod (after preprod)
+#
+# This mirrors CircleCI's build-test-and-deploy DAG documented in
+# templates/pipeline-dual-track.yml, where `test` and `preprod` both fork
+# directly off `dev` rather than chaining dev → test → preprod → prod.
+#
+# Only 2 tracks exist today (MI API main + probation). Per-track inputs are
+# used instead of a generic JSON/matrix "tracks" schema — see the plan's
+# "Open items" note: don't over-generalize to arbitrary N before a 3rd real
+# consumer needs it. `strategy: matrix` + `uses:` was considered but cannot
+# vary stage *topology* (which environments exist / where gates sit) per
+# track from data alone, and the two known tracks already differ in exactly
+# that dimension (track 2 has no distinct chart between tracks in MI UI's
+# case), so explicit per-track jobs stay the most readable option.
+#
+# Outputs do not automatically bubble through nested reusable workflow
+# calls, so `app-version` is threaded explicitly as a job output at every
+# layer that needs it (this workflow itself has no outputs — it is the top
+# of the call chain once a consuming repo's thin caller invokes it).
+#
+# IMPORTANT — why the nested `uses:` below are NOT relative (`./...`):
+# GitHub Actions resolves a relative reusable-workflow reference against the
+# repository context of the *original top-level caller*, not the repository
+# that physically contains the file using the relative path. Since this
+# workflow is itself invoked cross-repo (e.g. from
+# hmpps-digital-prison-reporting-mi's pipeline.yml), a relative `./` path
+# here would be looked up in the caller's repo and fail with
+# "workflow was not found". So every nested call below uses the fully
+# qualified `ministryofjustice/hmpps-reporting-workflows/...@vX` form,
+# pinned to the same tag as this file. Bumping to a new major version means
+# updating these refs too, as part of that release (see docs/versioning.md).
+
+on:
+  workflow_call:
+    inputs:
+      # ── Build stack ──────────────────────────────────────────────────
+      java-version:
+        type: string
+        default: '21'
+      gradle-check-command:
+        type: string
+        default: 'check'
+      cache-key-file:
+        type: string
+        default: 'build.gradle.kts'
+      test-results-path:
+        type: string
+        default: 'build/test-results'
+      reports-path:
+        type: string
+        default: 'build/reports/tests'
+
+      # ── Docker ───────────────────────────────────────────────────────
+      dockerfile-dir:
+        type: string
+        default: '.'
+      docker-registry:
+        type: string
+        default: 'ghcr.io'
+      registry-org:
+        type: string
+        default: 'ministryofjustice'
+
+      # ── Helm / deploy shared ─────────────────────────────────────────
+      helm-dir:
+        type: string
+        default: 'helm_deploy'
+      helm-timeout:
+        type: string
+        default: '5m'
+      slack-channel:
+        type: string
+        default: 'dpr_cicd_approvals'
+
+      # ── Track 1 (main API) ───────────────────────────────────────────
+      track1-chart-name:
+        description: Defaults to the caller repo name when empty
+        type: string
+        default: ''
+      track1-release-name:
+        description: Defaults to track1-chart-name when empty
+        type: string
+        default: ''
+      track1-dev-env:
+        type: string
+        default: 'dev'
+      track1-test-env:
+        type: string
+        default: 'test'
+      track1-preprod-env:
+        type: string
+        default: 'preprod'
+      track1-prod-env:
+        type: string
+        default: 'prod'
+
+      # ── Track 2 (probation API) ──────────────────────────────────────
+      enable-track2:
+        type: boolean
+        default: true
+      track2-chart-name:
+        type: string
+        default: 'hmpps-probation-mi-api'
+      track2-release-name:
+        type: string
+        default: 'hmpps-probation-mi-api'
+      track2-dev-env:
+        type: string
+        default: 'probation-dev'
+      track2-test-env:
+        type: string
+        default: 'probation-test'
+      track2-preprod-env:
+        type: string
+        default: 'probation-preprod'
+      track2-prod-env:
+        type: string
+        default: 'probation-prod'
+
+      # ── Only deploy/build on this ref ────────────────────────────────
+      deploy-ref:
+        description: Only build/deploy jobs run when github.ref equals this
+        type: string
+        default: 'refs/heads/main'
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+jobs:
+  # ── App version ──────────────────────────────────────────────────────
+  app_version:
+    name: Set app version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+    steps:
+      - id: set
+        run: echo "version=Build.${{ github.sha }}" >> "$GITHUB_OUTPUT"
+
+  # ── Gradle validate ──────────────────────────────────────────────────
+  gradle_validate:
+    name: Gradle validate
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/gradle_validate.yml@v1
+    secrets: inherit
+    with:
+      java-version: ${{ inputs.java-version }}
+      gradle-check-command: ${{ inputs.gradle-check-command }}
+      cache-key-file: ${{ inputs.cache-key-file }}
+      test-results-path: ${{ inputs.test-results-path }}
+      reports-path: ${{ inputs.reports-path }}
+
+  # ── Helm lint — track 1 (dev only, matches existing MI API shape) ────
+  helm_lint_track1:
+    name: Helm lint track 1 (dev)
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    with:
+      environment: ${{ inputs.track1-dev-env }}
+      chart-name: ${{ inputs.track1-chart-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+
+  # ── Helm lint — track 2 (all 4 envs) ─────────────────────────────────
+  helm_lint_track2_dev:
+    name: Helm lint track 2 (dev)
+    if: inputs.enable-track2
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    with:
+      environment: ${{ inputs.track2-dev-env }}
+      chart-name: ${{ inputs.track2-chart-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+
+  helm_lint_track2_test:
+    name: Helm lint track 2 (test)
+    if: inputs.enable-track2
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    with:
+      environment: ${{ inputs.track2-test-env }}
+      chart-name: ${{ inputs.track2-chart-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+
+  helm_lint_track2_preprod:
+    name: Helm lint track 2 (preprod)
+    if: inputs.enable-track2
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    with:
+      environment: ${{ inputs.track2-preprod-env }}
+      chart-name: ${{ inputs.track2-chart-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+
+  helm_lint_track2_prod:
+    name: Helm lint track 2 (prod)
+    if: inputs.enable-track2
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    with:
+      environment: ${{ inputs.track2-prod-env }}
+      chart-name: ${{ inputs.track2-chart-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+
+  # ── Docker build ─────────────────────────────────────────────────────
+  # `needs:` always lists the track2 helm-lint jobs even when enable-track2
+  # is false — when a needed job is skipped (its own `if:` was false), GHA
+  # skips every job that needs it by default, so the `if:` below has to
+  # explicitly treat 'skipped' as acceptable for the track2 jobs while
+  # still requiring 'success' for the jobs that always run.
+  build_docker:
+    name: Build multi-arch Docker image
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      needs.gradle_validate.result == 'success' &&
+      needs.helm_lint_track1.result == 'success' &&
+      needs.app_version.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_dev.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_test.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_preprod.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_prod.result)
+    needs:
+      - gradle_validate
+      - helm_lint_track1
+      - helm_lint_track2_dev
+      - helm_lint_track2_test
+      - helm_lint_track2_preprod
+      - helm_lint_track2_prod
+      - app_version
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@v1
+    secrets: inherit
+    with:
+      dockerfile-dir: ${{ inputs.dockerfile-dir }}
+      docker-registry: ${{ inputs.docker-registry }}
+      registry-org: ${{ inputs.registry-org }}
+      push: true
+
+  # ══════════════════════════════════════════════════════════════════════
+  # TRACK 1 — main API
+  # ══════════════════════════════════════════════════════════════════════
+
+  deploy_track1_dev:
+    name: Deploy track 1 → dev
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      needs.build_docker.result == 'success' &&
+      needs.app_version.result == 'success'
+    needs: [build_docker, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@feat/dhs-702-705
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track1-dev-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track1-chart-name }}
+      release-name: ${{ inputs.track1-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'false'
+
+  # Forks directly off dev — matches CircleCI's parallel [test-approval,
+  # preprod-approval] shape, not a linear dev → test → preprod chain.
+  deploy_track1_test:
+    name: Deploy track 1 → test
+    if: github.ref == inputs.deploy-ref
+    needs: [deploy_track1_dev, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track1-test-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track1-chart-name }}
+      release-name: ${{ inputs.track1-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'false'
+
+  deploy_track1_preprod:
+    name: Deploy track 1 → preprod
+    if: github.ref == inputs.deploy-ref
+    needs: [deploy_track1_dev, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track1-preprod-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track1-chart-name }}
+      release-name: ${{ inputs.track1-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'false'
+
+  deploy_track1_prod:
+    name: Deploy track 1 → prod
+    if: github.ref == inputs.deploy-ref
+    needs: [deploy_track1_preprod, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track1-prod-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track1-chart-name }}
+      release-name: ${{ inputs.track1-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'true'
+      slack-channel: ${{ inputs.slack-channel }}
+
+  # ══════════════════════════════════════════════════════════════════════
+  # TRACK 2 — probation API
+  # ══════════════════════════════════════════════════════════════════════
+
+  deploy_track2_dev:
+    name: Deploy track 2 → probation-dev
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      inputs.enable-track2 &&
+      needs.build_docker.result == 'success' &&
+      needs.helm_lint_track2_dev.result == 'success' &&
+      needs.app_version.result == 'success'
+    needs: [build_docker, helm_lint_track2_dev, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track2-dev-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track2-chart-name }}
+      release-name: ${{ inputs.track2-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'false'
+
+  deploy_track2_test:
+    name: Deploy track 2 → probation-test
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      inputs.enable-track2 &&
+      needs.deploy_track2_dev.result == 'success' &&
+      needs.helm_lint_track2_test.result == 'success' &&
+      needs.app_version.result == 'success'
+    needs: [deploy_track2_dev, helm_lint_track2_test, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track2-test-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track2-chart-name }}
+      release-name: ${{ inputs.track2-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'false'
+
+  deploy_track2_preprod:
+    name: Deploy track 2 → probation-preprod
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      inputs.enable-track2 &&
+      needs.deploy_track2_dev.result == 'success' &&
+      needs.helm_lint_track2_preprod.result == 'success' &&
+      needs.app_version.result == 'success'
+    needs: [deploy_track2_dev, helm_lint_track2_preprod, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track2-preprod-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track2-chart-name }}
+      release-name: ${{ inputs.track2-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'false'
+
+  deploy_track2_prod:
+    name: Deploy track 2 → probation-prod
+    if: |
+      always() &&
+      github.ref == inputs.deploy-ref &&
+      inputs.enable-track2 &&
+      needs.deploy_track2_preprod.result == 'success' &&
+      needs.helm_lint_track2_prod.result == 'success' &&
+      needs.app_version.result == 'success'
+    needs: [deploy_track2_preprod, helm_lint_track2_prod, app_version]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.track2-prod-env }}
+      app-version: ${{ needs.app_version.outputs.version }}
+      helm-chart-name: ${{ inputs.track2-chart-name }}
+      release-name: ${{ inputs.track2-release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      slack-notification: 'true'
+      slack-channel: ${{ inputs.slack-channel }}

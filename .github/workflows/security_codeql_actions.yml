@@ -1,0 +1,32 @@
+name: Security CodeQL actions scan (proxy)
+
+# Thin workflow_call wrapper around ministryofjustice/hmpps-github-actions,
+# so every consuming repo only ever references hmpps-reporting-workflows
+# and never hmpps-github-actions directly. See docs: security scans.
+#
+# Accepted risk (see plan): the DPR team is now responsible for tracking
+# and re-publishing upstream hmpps-github-actions version bumps. The ref
+# below is pinned deliberately — bumping it is a reviewable change to this
+# repo, not a floating dependency. See security_drift_check.yml for the
+# automated staleness guard.
+
+on:
+  workflow_call:
+    inputs:
+      channel_id:
+        type: string
+        default: 'NO_SLACK'
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  proxy:
+    name: Project security CodeQL actions scan
+    # Pinned upstream ref — bump deliberately, see docs/versioning.md
+    uses: ministryofjustice/hmpps-github-actions/.github/workflows/security_codeql_actions.yml@v2
+    with:
+      channel_id: ${{ inputs.channel_id }}
+    secrets: inherit
