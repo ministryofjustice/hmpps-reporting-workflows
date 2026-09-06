@@ -191,6 +191,15 @@ jobs:
           fi
 
       # ── Helm upgrade/install ─────────────────────────────────────────
+      - name: Print Helm deployment details
+    run: |
+      echo "Helm release : ${{ steps.names.outputs.release }}"
+      echo "Chart        : ${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}"
+      echo "Namespace    : ${{ secrets.KUBE_NAMESPACE }}"
+      echo "Values file  : ${{ inputs.helm-dir }}/values-${{ inputs.environment }}.yaml"
+      echo "Image set    : ${{ steps.image-tag.outputs.set-arg }}=${{ inputs.app-version }}"
+      echo "Timeout      : ${{ inputs.helm-timeout }}"
+      echo "Extra args   : ${{ inputs.helm-additional-args }}"
       - name: Helm upgrade
         run: |
           helm upgrade "${{ steps.names.outputs.release }}" \
