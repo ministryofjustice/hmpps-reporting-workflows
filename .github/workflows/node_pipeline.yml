@@ -96,6 +96,11 @@ on:
         type: string
         default: 'refs/heads/main'
 
+      deploy-dev-on-feature-branches:
+        description: Build image and deploy track1/track2 DEV on non-main branches
+        type: boolean
+        default: true
+
 permissions:
   contents: read
   packages: write
@@ -196,7 +201,7 @@ jobs:
     name: Build multi-arch Docker image
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       needs.node_validate.result == 'success' &&
       needs.helm_lint_track1_dev.result == 'success' &&
       needs.helm_lint_track1_test.result == 'success' &&
@@ -226,12 +231,13 @@ jobs:
       registry-org: ${{ inputs.registry-org }}
       additional-docker-build-args: ${{ inputs.additional-docker-build-args }}
       push: true
+      tag-latest: ${{ github.ref == inputs.deploy-ref }}
 
   deploy_track1_dev:
     name: Deploy track 1 → dev
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       needs.build_docker.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [build_docker, app_version]
@@ -296,7 +302,7 @@ jobs:
     name: Deploy track 2 → probation-dev
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       inputs.enable-track2 &&
       needs.build_docker.result == 'success' &&
       needs.helm_lint_track2_dev.result == 'success' &&

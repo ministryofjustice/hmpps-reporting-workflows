@@ -1,4 +1,4 @@
-name: Bump library version
+name: Bump version
 description: >-
   Language-agnostic core of the "bump shared library version" workflow:
   applies a caller-supplied version to a caller-supplied file, then commits,
@@ -71,7 +71,7 @@ runs:
 
     # ── Commit, tag, push ────────────────────────────────────────────────
     # Matches the git steps previously inlined in each consuming repo's
-    # bump-lib-version.yml (branch/commit/tag/push were identical across
+    # bump-version.yml (branch/commit/tag/push were identical across
     # repos; only version-detection and apply differed).
     - name: Commit version bump
       shell: bash

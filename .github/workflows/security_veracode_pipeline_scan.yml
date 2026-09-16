@@ -2,7 +2,7 @@ name: Security veracode pipeline scan (proxy)
 
 # Thin wrapper around ministryofjustice/hmpps-github-actions. Builds the
 # artifact to scan first (Gradle-only for Phase 1 — `build-command` is a
-# seam for a future Node variant, mirroring the bump-lib-version composite
+# seam for a future Node variant, mirroring the bump-version composite
 # action's stack-agnostic design), then proxies the actual scan.
 
 on:

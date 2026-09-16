@@ -43,6 +43,10 @@ on:
         description: Whether to push the image (set false for dry-run)
         type: boolean
         default: true
+      tag-latest:
+        description: Also push the :latest tag (disable on feature/PR builds)
+        type: boolean
+        default: true
     outputs:
       app-version:
         description: The app version tag that was built and pushed
@@ -98,6 +102,22 @@ jobs:
         with:
           platforms: linux/amd64,linux/arm64
 
+      - name: Compute image tags
+        id: tags
+        env:
+          IMAGE: ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}
+          APP_VERSION: ${{ steps.version.outputs.app_version }}
+          TAG_LATEST: ${{ inputs.tag-latest }}
+        run: |
+          {
+            echo "list<<EOF"
+            echo "${IMAGE}:${APP_VERSION}"
+            if [ "${TAG_LATEST}" = "true" ]; then
+              echo "${IMAGE}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       # ── Build and push ───────────────────────────────────────────────
       # Matches CircleCI: docker buildx build
       #   --platform linux/amd64,linux/arm64 --pull --progress plain
@@ -112,9 +132,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           pull: true
           push: ${{ inputs.push }}
-          tags: |
-            ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:${{ steps.version.outputs.app_version }}
-            ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:latest
+          tags: ${{ steps.tags.outputs.list }}
           labels: |
             maintainer=dps-hmpps@digital.justice.gov.uk
             app.version=${{ steps.version.outputs.app_version }}

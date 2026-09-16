@@ -1,22 +1,15 @@
 # ============================================================================
-# Copy-paste starter: bump shared library version
+# Copy-paste starter: bump shared dependency version
 # ============================================================================
-# Copy this file into a consuming repo at:
-#   .github/workflows/bump-lib-version.yml
+# Copy into the consuming repo as:
+#   .github/workflows/bump-version.yml
 #
-# The git branch/commit/tag/PR steps are centrally owned in
-# actions/bump-lib-version/action.yml. This file only supplies the
-# stack-specific "how do I find the current version" step and the
-# "how do I apply it" command.
-#
-# GRADLE/MAVEN VARIANT (shown below — e.g. hmpps-digital-prison-reporting-mi)
-# NODE VARIANT (Phase 2 — e.g. hmpps-digital-prison-reporting-mi-ui):
-#   replace the "Get current version" step with:
-#     CURRENT_VERSION=$(npm view @ministryofjustice/hmpps-digital-prison-reporting-frontend version)
-#   and set apply-command to:
-#     npm install @ministryofjustice/hmpps-digital-prison-reporting-frontend@^${{ steps.get-version.outputs.current_version }} --save
-#   and files-to-commit to: package.json package-lock.json
+# Git branch/commit/tag/PR steps live in
+# actions/bump-version/action.yml. This file only supplies stack-specific
+# version discovery + apply command.
 # ============================================================================
+
+name: Bump version
 
 on:
   workflow_dispatch:
@@ -38,8 +31,8 @@ jobs:
           CURRENT_VERSION=$(curl -s --request GET https://repo1.maven.org/maven2/uk/gov/justice/service/hmpps/hmpps-digital-prison-reporting-lib/maven-metadata.xml | grep -oP '(?<=<version>)[^<]+' | grep -v -e '2024-02-27' -e '2024-02-28' | tail -n1)
           echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Bump library version
-        uses: ministryofjustice/hmpps-reporting-workflows/actions/bump-lib-version@v1
+      - name: Bump version
+        uses: ministryofjustice/hmpps-reporting-workflows/actions/bump-version@v1
         with:
           current-version: ${{ steps.get-version.outputs.current_version }}
           apply-command: >-
