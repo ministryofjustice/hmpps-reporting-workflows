@@ -1,0 +1,33 @@
+name: Security OWASP dependency check (proxy)
+
+# Thin workflow_call wrapper around ministryofjustice/hmpps-github-actions
+# for Java/Gradle stacks. See security_codeql_actions.yml for the pinning
+# rationale and security_drift_check.yml for the staleness guard.
+
+on:
+  workflow_call:
+    inputs:
+      channel_id:
+        type: string
+        default: 'NO_SLACK'
+      nvd_feed_version:
+        type: string
+        default: '2'
+      java_version:
+        type: string
+        default: '21'
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  proxy:
+    name: Kotlin/Java security OWASP dependency check
+    uses: ministryofjustice/hmpps-github-actions/.github/workflows/security_owasp.yml@v2
+    with:
+      channel_id: ${{ inputs.channel_id }}
+      nvd_feed_version: ${{ inputs.nvd_feed_version }}
+      java_version: ${{ inputs.java_version }}
+    secrets: inherit

@@ -1,0 +1,72 @@
+name: Security veracode policy scan (proxy)
+
+# Thin wrapper around ministryofjustice/hmpps-github-actions — same shape
+# as security_veracode_pipeline_scan.yml, see that file for rationale.
+
+on:
+  workflow_call:
+    inputs:
+      channel_id:
+        type: string
+        default: 'NO_SLACK'
+      java_version:
+        type: string
+        default: '21'
+      build-command:
+        type: string
+        default: 'BUILD_NUMBER=veracode ./gradlew assemble'
+      build-artifact-name:
+        type: string
+        default: 'build-results'
+      veracode-artifact-name:
+        description: Defaults to "<repo-name>-veracode.jar" when empty
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+  actions: read
+  security-events: write
+
+jobs:
+  create-artifact:
+    name: Build the artifact for veracode to scan
+    uses: ministryofjustice/hmpps-github-actions/.github/workflows/gradle_verify.yml@v2
+    with:
+      gradle-command: ${{ inputs.build-command }}
+      upload-build-artifacts: true
+      build-artifact-name: ${{ inputs.build-artifact-name }}
+      upload-test-artifacts: false
+      java-version: ${{ inputs.java_version }}
+    permissions:
+      contents: read
+      actions: read
+
+  resolve-artifact-name:
+    name: Resolve veracode artifact name
+    needs: create-artifact
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.resolve.outputs.name }}
+    steps:
+      - id: resolve
+        run: |
+          NAME="${{ inputs.veracode-artifact-name }}"
+          if [ -z "$NAME" ]; then
+            NAME="${{ github.event.repository.name }}-veracode.jar"
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+  proxy:
+    name: Project security veracode policy scan
+    needs: [create-artifact, resolve-artifact-name]
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-github-actions/.github/workflows/security_veracode_policy_scan.yml@v2
+    with:
+      channel_id: ${{ inputs.channel_id }}
+      veracode_package_artifact_name: ${{ inputs.build-artifact-name }}
+      veracode_artifact_name: ${{ needs.resolve-artifact-name.outputs.name }}
+    secrets: inherit
