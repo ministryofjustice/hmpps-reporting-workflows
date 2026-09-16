@@ -1,0 +1,77 @@
+name: Node Validate
+
+# Replaces CircleCI MI-UI jobs: build + unit_test (+ optional lint).
+# Integration / acceptance / Sentry are separate follow-ups — this workflow
+# covers the validate gate needed before helm lint + docker + deploy.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node major or full version
+        type: string
+        default: '24'
+      install-command:
+        type: string
+        default: 'npm run setup --no-audit'
+      build-command:
+        type: string
+        default: 'npm run build'
+      lint-command:
+        type: string
+        default: 'npm run lint'
+      unit-test-command:
+        type: string
+        default: 'npm run test:ci'
+      run-lint:
+        type: boolean
+        default: true
+      run-unit-test:
+        type: boolean
+        default: true
+      test-results-path:
+        type: string
+        default: 'test_results'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Node validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node ${{ inputs.node-version }}
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: ${{ inputs.install-command }}
+
+      - name: Build
+        env:
+          GIT_REF: ${{ github.sha }}
+        run: ${{ inputs.build-command }}
+
+      - name: Lint
+        if: inputs.run-lint
+        run: ${{ inputs.lint-command }}
+
+      - name: Unit tests
+        if: inputs.run-unit-test
+        run: ${{ inputs.unit-test-command }}
+
+      - name: Upload test results
+        if: always() && inputs.run-unit-test
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: node-test-results
+          path: ${{ inputs.test-results-path }}
+          if-no-files-found: ignore

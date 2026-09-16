@@ -1,0 +1,104 @@
+# ============================================================================
+# Copy-paste starter: consolidated security schedule
+# ============================================================================
+# Copy into the consuming repo as:
+#   .github/workflows/schedule.yml
+#
+# Gradle stacks: enable owasp (+ codeql / veracode).
+# Node stacks: enable npm (+ codeql / veracode); omit owasp.
+# ============================================================================
+
+name: Scheduled security scans
+
+on:
+  workflow_dispatch:
+    inputs:
+      scan:
+        description: Which scan to run
+        type: choice
+        default: all
+        options:
+          - all
+          - codeql
+          - owasp
+          - npm
+          - veracode-pipeline
+          - veracode-policy
+  schedule:
+    - cron: "19 6 * * MON-FRI"
+    - cron: "34 6 * * 1"
+
+jobs:
+  codeql:
+    name: Project security CodeQL actions scan
+    if: |
+      github.event.schedule == '19 6 * * MON-FRI' ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["all","codeql"]'), inputs.scan))
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_codeql_actions.yml@v1
+    with:
+      channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+    secrets: inherit
+
+  # Gradle only — delete this job for Node apps
+  owasp:
+    name: Kotlin security OWASP dependency check
+    if: |
+      github.event.schedule == '19 6 * * MON-FRI' ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["all","owasp"]'), inputs.scan))
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_owasp.yml@v1
+    with:
+      channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+      nvd_feed_version: "2"
+      java_version: "21"
+    secrets: inherit
+
+  # Node only — delete this job for Gradle apps
+  npm:
+    name: Project security npm dependency check
+    if: |
+      github.event.schedule == '19 6 * * MON-FRI' ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["all","npm"]'), inputs.scan))
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_npm_dependency.yml@v1
+    with:
+      channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+    secrets: inherit
+
+  veracode-pipeline:
+    name: Project security veracode pipeline scan
+    if: |
+      github.event.schedule == '19 6 * * MON-FRI' ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["all","veracode-pipeline"]'), inputs.scan))
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_veracode_pipeline_scan.yml@v1
+    with:
+      channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+    secrets: inherit
+
+  veracode-policy:
+    name: Project security veracode policy scan
+    if: |
+      github.event.schedule == '34 6 * * 1' ||
+      (github.event_name == 'workflow_dispatch' && contains(fromJSON('["all","veracode-policy"]'), inputs.scan))
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/security_veracode_policy_scan.yml@v1
+    with:
+      channel_id: ${{ vars.SECURITY_ALERTS_SLACK_CHANNEL_ID || 'NO_SLACK' }}
+    secrets: inherit

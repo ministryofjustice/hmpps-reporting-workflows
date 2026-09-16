@@ -1,9 +1,12 @@
 # Versioning
 
-`hmpps-reporting-workflows` is versioned like a CircleCI orb
-(`hmpps-reporting-orb`) was: consuming repos pin to a **semver git tag**,
-never to `@main`. This lets the library evolve without silently breaking
-every consumer on the same day.
+`hmpps-reporting-workflows` is versioned like a CircleCI orb was: consuming
+repos pin to a **semver git tag**, never to `@main`. This lets the library
+evolve without silently breaking every consumer on the same day.
+
+Step-level composites live in `hmpps-reporting-actions` and use the same
+tagging rules — workflows that call actions should pin `@v1` there and
+release this repo after the actions tag exists.
 
 ## Tagging convention
 
@@ -58,21 +61,18 @@ silently-changed pipeline.
 
 ## Release process
 
+Tags are created automatically by [`.github/workflows/release.yml`](../.github/workflows/release.yml):
+
 1. Land the change on `main` via PR review as normal.
-2. Decide breaking vs non-breaking using the rules above.
-3. Tag:
-   - Non-breaking: move the existing major tag forward
-     (`git tag -f v1 <sha> && git push origin v1 --force`) **and** cut an
-     immutable full tag (`git tag v1.2.0 <sha> && git push origin v1.2.0`)
-     so consumers who want to freeze can do so.
-   - Breaking: cut a new major tag (`v2`) starting from the breaking
-     commit; leave `v1` pointing at its last compatible commit forever so
-     existing pinned consumers are unaffected.
-4. Update this repo's `README.md` "current version" pointer (if present)
-   and notify consuming repo owners (MI API, MI UI) of any action required.
-5. Consuming repos upgrade on their own schedule by bumping the `@vX` ref
-   in their thin caller workflow files and re-running their pipeline on a
-   feature branch before merging to `main`.
+2. On push to `main`, the workflow **patch-bumps** by default:
+   - Creates immutable full tag `vX.Y.Z`
+   - Force-moves moving tags `vX` and `vX.Y` to the same commit
+   - Creates a GitHub Release with generated notes
+3. For a **minor** or **major** (breaking) bump, run **Actions → Release tags → Run workflow**
+   and choose `minor` or `major`.
+4. Consuming repos pin `@v1` (recommended) or a full tag when freezing.
+
+Bootstrap (no full tags yet): the first run creates `v1.0.0`, `v1.0`, and `v1`.
 
 ## Upgrade process for consumers
 

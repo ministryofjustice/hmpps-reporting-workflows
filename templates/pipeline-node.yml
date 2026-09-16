@@ -1,0 +1,40 @@
+# ============================================================================
+# Copy-paste starter: dual-track pipeline thin caller (Node)
+# ============================================================================
+# Copy into the consuming repo as:
+#   .github/workflows/pipeline.yml
+# ============================================================================
+
+name: Pipeline
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  pipeline:
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_pipeline.yml@v1
+    secrets: inherit
+    with:
+      node-version: '24'
+
+      track1-chart-name: ''
+      track1-release-name: ''
+
+      enable-track2: true
+      track2-chart-name: 'hmpps-probation-mi-ui'
+      track2-release-name: 'hmpps-probation-mi-ui'
+
+      slack-channel: 'dpr_cicd_approvals'

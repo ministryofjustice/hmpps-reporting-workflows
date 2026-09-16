@@ -1,0 +1,43 @@
+# ============================================================================
+# Copy-paste starter: dual-track pipeline thin caller (Gradle / Kotlin)
+# ============================================================================
+# Copy into the consuming repo as:
+#   .github/workflows/pipeline.yml
+#
+# For Node apps use templates/pipeline-node.yml instead.
+# ============================================================================
+
+name: Pipeline
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  pipeline:
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/reporting_pipeline.yml@v1
+    secrets: inherit
+    with:
+      java-version: '21'
+      gradle-check-command: 'check'
+
+      track1-chart-name: ''
+      track1-release-name: ''
+
+      enable-track2: true
+      track2-chart-name: 'CHANGE_ME'
+      track2-release-name: 'CHANGE_ME'
+
+      slack-channel: 'dpr_cicd_approvals'
