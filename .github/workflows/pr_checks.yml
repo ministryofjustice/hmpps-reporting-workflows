@@ -83,17 +83,12 @@ jobs:
           gh pr comment ${{ github.event.pull_request.number }} --body "$(grep 'Test Coverage:' logs.txt -A6)"
 
       # ── Node ─────────────────────────────────────────────────────────
-      - name: Setup Node ${{ inputs.node-version }}
+      - name: Setup Node and npm
         if: inputs.stack == 'node'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@v1
         with:
           node-version: ${{ inputs.node-version }}
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install dependencies
-        if: inputs.stack == 'node'
-        run: ${{ inputs.install-command }}
+          install-command: ${{ inputs.install-command }}
 
       - name: Calculate test coverage (Node)
         if: inputs.stack == 'node'

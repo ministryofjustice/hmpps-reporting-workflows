@@ -28,8 +28,8 @@ Use **workflow_dispatch** for minor/major bumps.
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
   - `security_drift_check.yml` — upstream pin drift guard
-- `actions/` — legacy composites still in this repo; prefer new step
-  building blocks in `hmpps-reporting-actions` (e.g. `setup-node-npm`).
+- Step building blocks live in `hmpps-reporting-actions`
+  (`setup-node-npm`, `bump-version`) — workflows call them via `@v1`
 - `templates/` — copy-paste thin callers for apps
   (`pipeline-java.yml`, `pipeline-node.yml`, …)
 - `docs/` — versioning / process docs
