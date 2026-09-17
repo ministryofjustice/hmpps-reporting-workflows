@@ -100,11 +100,11 @@ on:
 
       # ── Promote / feature-branch behaviour ───────────────────────────
       deploy-ref:
-        description: Full promote (test → prod, + probation) only on this ref
+        description: Full promote (test → prod) only on this ref
         type: string
         default: 'refs/heads/main'
       deploy-dev-on-feature-branches:
-        description: Build image and deploy primary DEV on non-main branches
+        description: Build image and deploy primary + probation DEV on non-main branches
         type: boolean
         default: true
 
@@ -277,13 +277,13 @@ jobs:
       slack-notification: 'true'
       slack-channel: ${{ inputs.slack-channel }}
 
-  # ── Probation preset (main only) ─────────────────────────────────────
+  # ── Probation preset (DEV also on feature branches when enabled) ─────
 
   deploy_probation_dev:
     name: Deploy probation → probation-dev
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       inputs.enable-probation &&
       needs.build_docker.result == 'success' &&
       needs.helm_lint_probation_dev.result == 'success' &&
