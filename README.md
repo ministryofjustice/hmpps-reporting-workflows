@@ -21,8 +21,8 @@ Use **workflow_dispatch** for minor/major bumps.
 ## Layout
 
 - `.github/workflows/` — reusable `workflow_call` workflows:
-  - `frontend_java_pipeline.yml` — Gradle/Kotlin dual-track build/deploy (MI API)
-  - `frontend_node_pipeline.yml` — Node dual-track build/deploy (MI UI)
+  - `frontend_java_pipeline.yml` — Gradle/Kotlin build/deploy (primary + optional probation)
+  - `frontend_node_pipeline.yml` — Node build/deploy (primary + optional probation)
   - `pr_checks.yml` — PR checks (`stack: gradle|node`)
   - `gradle_validate.yml`, `node_validate.yml`, `helm_lint.yml`,
     `docker_build.yml`, `deploy_env.yml` — primitives
@@ -30,10 +30,22 @@ Use **workflow_dispatch** for minor/major bumps.
   - `security_drift_check.yml` — upstream pin drift guard
 - `actions/` — legacy composites still in this repo; prefer new step
   building blocks in `hmpps-reporting-actions` (e.g. `setup-node-npm`).
-  Workflows may inline `actions/setup-node` until that actions tag is cut.
 - `templates/` — copy-paste thin callers for apps
   (`pipeline-java.yml`, `pipeline-node.yml`, …)
 - `docs/` — versioning / process docs
+
+### Deploy model
+
+One Docker image, **primary** Helm product always. Optional named preset:
+
+```yaml
+with:
+  enable-probation: true   # uses workflow defaults for chart/envs
+  # probation-chart-name: …  # override only if needed
+```
+
+Other Java/Node apps leave `enable-probation` false (default). Future products
+should be further **named** presets (e.g. activities), not numbered flags.
 
 ## App stub convention
 

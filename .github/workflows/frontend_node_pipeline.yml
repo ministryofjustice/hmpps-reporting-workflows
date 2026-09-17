@@ -1,13 +1,9 @@
-name: Frontend Node pipeline (dual-track)
+name: Frontend Node pipeline
 
-# Dual-track build/deploy for Node Cloud Platform apps (MI-UI).
-# Mirrors frontend_java_pipeline.yml topology; validate uses node_validate
-# instead of gradle_validate. Track-1 helm lint covers all four envs
-# (matches hmpps-circleci-orb usage in MI-UI CircleCI config).
-#
-# Nested uses: must be fully-qualified (see frontend_java_pipeline.yml header).
-# Integration tests, acceptance tests, and Sentry secret updates are not
-# in this first cut — add as follow-up reusable workflows/actions.
+# Orchestrator for Node Cloud Platform apps (e.g. MI UI).
+# Same primary + optional probation preset as frontend_java_pipeline;
+# validate uses node_validate. Primary helm lint covers all four envs
+# (matches MI-UI CircleCI). Nested uses must be fully-qualified.
 
 on:
   workflow_call:
@@ -51,53 +47,53 @@ on:
         type: string
         default: 'dpr_cicd_approvals'
 
-      track1-chart-name:
+      primary-chart-name:
         type: string
         default: ''
-      track1-release-name:
+      primary-release-name:
         type: string
         default: ''
-      track1-dev-env:
+      primary-dev-env:
         type: string
         default: 'dev'
-      track1-test-env:
+      primary-test-env:
         type: string
         default: 'test'
-      track1-preprod-env:
+      primary-preprod-env:
         type: string
         default: 'preprod'
-      track1-prod-env:
+      primary-prod-env:
         type: string
         default: 'prod'
 
-      enable-track2:
+      enable-probation:
+        description: Deploy the probation Helm product alongside primary
         type: boolean
-        default: true
-      track2-chart-name:
+        default: false
+      probation-chart-name:
         type: string
         default: 'hmpps-probation-mi-ui'
-      track2-release-name:
+      probation-release-name:
         type: string
         default: 'hmpps-probation-mi-ui'
-      track2-dev-env:
+      probation-dev-env:
         type: string
         default: 'probation-dev'
-      track2-test-env:
+      probation-test-env:
         type: string
         default: 'probation-test'
-      track2-preprod-env:
+      probation-preprod-env:
         type: string
         default: 'probation-preprod'
-      track2-prod-env:
+      probation-prod-env:
         type: string
         default: 'probation-prod'
 
       deploy-ref:
         type: string
         default: 'refs/heads/main'
-
       deploy-dev-on-feature-branches:
-        description: Build image and deploy track1 DEV on non-main branches
+        description: Build image and deploy primary DEV on non-main branches
         type: boolean
         default: true
 
@@ -128,73 +124,72 @@ jobs:
       lint-command: ${{ inputs.lint-command }}
       unit-test-command: ${{ inputs.unit-test-command }}
 
-  # Track 1 — lint all envs (MI-UI CircleCI shape)
-  helm_lint_track1_dev:
-    name: Helm lint track 1 (dev)
+  helm_lint_primary_dev:
+    name: Helm lint primary (dev)
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track1-dev-env }}
-      chart-name: ${{ inputs.track1-chart-name }}
+      environment: ${{ inputs.primary-dev-env }}
+      chart-name: ${{ inputs.primary-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track1_test:
-    name: Helm lint track 1 (test)
+  helm_lint_primary_test:
+    name: Helm lint primary (test)
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track1-test-env }}
-      chart-name: ${{ inputs.track1-chart-name }}
+      environment: ${{ inputs.primary-test-env }}
+      chart-name: ${{ inputs.primary-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track1_preprod:
-    name: Helm lint track 1 (preprod)
+  helm_lint_primary_preprod:
+    name: Helm lint primary (preprod)
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track1-preprod-env }}
-      chart-name: ${{ inputs.track1-chart-name }}
+      environment: ${{ inputs.primary-preprod-env }}
+      chart-name: ${{ inputs.primary-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track1_prod:
-    name: Helm lint track 1 (prod)
+  helm_lint_primary_prod:
+    name: Helm lint primary (prod)
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track1-prod-env }}
-      chart-name: ${{ inputs.track1-chart-name }}
+      environment: ${{ inputs.primary-prod-env }}
+      chart-name: ${{ inputs.primary-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track2_dev:
-    name: Helm lint track 2 (dev)
-    if: inputs.enable-track2
+  helm_lint_probation_dev:
+    name: Helm lint probation (dev)
+    if: inputs.enable-probation
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track2-dev-env }}
-      chart-name: ${{ inputs.track2-chart-name }}
+      environment: ${{ inputs.probation-dev-env }}
+      chart-name: ${{ inputs.probation-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track2_test:
-    name: Helm lint track 2 (test)
-    if: inputs.enable-track2
+  helm_lint_probation_test:
+    name: Helm lint probation (test)
+    if: inputs.enable-probation
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track2-test-env }}
-      chart-name: ${{ inputs.track2-chart-name }}
+      environment: ${{ inputs.probation-test-env }}
+      chart-name: ${{ inputs.probation-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track2_preprod:
-    name: Helm lint track 2 (preprod)
-    if: inputs.enable-track2
+  helm_lint_probation_preprod:
+    name: Helm lint probation (preprod)
+    if: inputs.enable-probation
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track2-preprod-env }}
-      chart-name: ${{ inputs.track2-chart-name }}
+      environment: ${{ inputs.probation-preprod-env }}
+      chart-name: ${{ inputs.probation-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  helm_lint_track2_prod:
-    name: Helm lint track 2 (prod)
-    if: inputs.enable-track2
+  helm_lint_probation_prod:
+    name: Helm lint probation (prod)
+    if: inputs.enable-probation
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
     with:
-      environment: ${{ inputs.track2-prod-env }}
-      chart-name: ${{ inputs.track2-chart-name }}
+      environment: ${{ inputs.probation-prod-env }}
+      chart-name: ${{ inputs.probation-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
   build_docker:
@@ -203,25 +198,25 @@ jobs:
       always() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       needs.node_validate.result == 'success' &&
-      needs.helm_lint_track1_dev.result == 'success' &&
-      needs.helm_lint_track1_test.result == 'success' &&
-      needs.helm_lint_track1_preprod.result == 'success' &&
-      needs.helm_lint_track1_prod.result == 'success' &&
+      needs.helm_lint_primary_dev.result == 'success' &&
+      needs.helm_lint_primary_test.result == 'success' &&
+      needs.helm_lint_primary_preprod.result == 'success' &&
+      needs.helm_lint_primary_prod.result == 'success' &&
       needs.app_version.result == 'success' &&
-      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_dev.result) &&
-      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_test.result) &&
-      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_preprod.result) &&
-      contains(fromJSON('["success","skipped"]'), needs.helm_lint_track2_prod.result)
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_dev.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_test.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_preprod.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_prod.result)
     needs:
       - node_validate
-      - helm_lint_track1_dev
-      - helm_lint_track1_test
-      - helm_lint_track1_preprod
-      - helm_lint_track1_prod
-      - helm_lint_track2_dev
-      - helm_lint_track2_test
-      - helm_lint_track2_preprod
-      - helm_lint_track2_prod
+      - helm_lint_primary_dev
+      - helm_lint_primary_test
+      - helm_lint_primary_preprod
+      - helm_lint_primary_prod
+      - helm_lint_probation_dev
+      - helm_lint_probation_test
+      - helm_lint_probation_preprod
+      - helm_lint_probation_prod
       - app_version
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@v1
     secrets: inherit
@@ -233,8 +228,8 @@ jobs:
       push: true
       tag-latest: ${{ github.ref == inputs.deploy-ref }}
 
-  deploy_track1_dev:
-    name: Deploy track 1 → dev
+  deploy_primary_dev:
+    name: Deploy primary → dev
     if: |
       always() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
@@ -244,140 +239,140 @@ jobs:
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track1-dev-env }}
+      environment: ${{ inputs.primary-dev-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track1-chart-name }}
-      release-name: ${{ inputs.track1-release-name }}
+      helm-chart-name: ${{ inputs.primary-chart-name }}
+      release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
 
-  deploy_track1_test:
-    name: Deploy track 1 → test
+  deploy_primary_test:
+    name: Deploy primary → test
     if: github.ref == inputs.deploy-ref
-    needs: [deploy_track1_dev, app_version]
+    needs: [deploy_primary_dev, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track1-test-env }}
+      environment: ${{ inputs.primary-test-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track1-chart-name }}
-      release-name: ${{ inputs.track1-release-name }}
+      helm-chart-name: ${{ inputs.primary-chart-name }}
+      release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
 
-  deploy_track1_preprod:
-    name: Deploy track 1 → preprod
+  deploy_primary_preprod:
+    name: Deploy primary → preprod
     if: github.ref == inputs.deploy-ref
-    needs: [deploy_track1_dev, app_version]
+    needs: [deploy_primary_dev, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track1-preprod-env }}
+      environment: ${{ inputs.primary-preprod-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track1-chart-name }}
-      release-name: ${{ inputs.track1-release-name }}
+      helm-chart-name: ${{ inputs.primary-chart-name }}
+      release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
 
-  deploy_track1_prod:
-    name: Deploy track 1 → prod
+  deploy_primary_prod:
+    name: Deploy primary → prod
     if: github.ref == inputs.deploy-ref
-    needs: [deploy_track1_preprod, app_version]
+    needs: [deploy_primary_preprod, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track1-prod-env }}
+      environment: ${{ inputs.primary-prod-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track1-chart-name }}
-      release-name: ${{ inputs.track1-release-name }}
+      helm-chart-name: ${{ inputs.primary-chart-name }}
+      release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'true'
       slack-channel: ${{ inputs.slack-channel }}
 
-  deploy_track2_dev:
-    name: Deploy track 2 → probation-dev
+  deploy_probation_dev:
+    name: Deploy probation → probation-dev
     if: |
       always() &&
       github.ref == inputs.deploy-ref &&
-      inputs.enable-track2 &&
+      inputs.enable-probation &&
       needs.build_docker.result == 'success' &&
-      needs.helm_lint_track2_dev.result == 'success' &&
+      needs.helm_lint_probation_dev.result == 'success' &&
       needs.app_version.result == 'success'
-    needs: [build_docker, helm_lint_track2_dev, app_version]
+    needs: [build_docker, helm_lint_probation_dev, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track2-dev-env }}
+      environment: ${{ inputs.probation-dev-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track2-chart-name }}
-      release-name: ${{ inputs.track2-release-name }}
+      helm-chart-name: ${{ inputs.probation-chart-name }}
+      release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
 
-  deploy_track2_test:
-    name: Deploy track 2 → probation-test
+  deploy_probation_test:
+    name: Deploy probation → probation-test
     if: |
       always() &&
       github.ref == inputs.deploy-ref &&
-      inputs.enable-track2 &&
-      needs.deploy_track2_dev.result == 'success' &&
-      needs.helm_lint_track2_test.result == 'success' &&
+      inputs.enable-probation &&
+      needs.deploy_probation_dev.result == 'success' &&
+      needs.helm_lint_probation_test.result == 'success' &&
       needs.app_version.result == 'success'
-    needs: [deploy_track2_dev, helm_lint_track2_test, app_version]
+    needs: [deploy_probation_dev, helm_lint_probation_test, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track2-test-env }}
+      environment: ${{ inputs.probation-test-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track2-chart-name }}
-      release-name: ${{ inputs.track2-release-name }}
+      helm-chart-name: ${{ inputs.probation-chart-name }}
+      release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
 
-  deploy_track2_preprod:
-    name: Deploy track 2 → probation-preprod
+  deploy_probation_preprod:
+    name: Deploy probation → probation-preprod
     if: |
       always() &&
       github.ref == inputs.deploy-ref &&
-      inputs.enable-track2 &&
-      needs.deploy_track2_dev.result == 'success' &&
-      needs.helm_lint_track2_preprod.result == 'success' &&
+      inputs.enable-probation &&
+      needs.deploy_probation_dev.result == 'success' &&
+      needs.helm_lint_probation_preprod.result == 'success' &&
       needs.app_version.result == 'success'
-    needs: [deploy_track2_dev, helm_lint_track2_preprod, app_version]
+    needs: [deploy_probation_dev, helm_lint_probation_preprod, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track2-preprod-env }}
+      environment: ${{ inputs.probation-preprod-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track2-chart-name }}
-      release-name: ${{ inputs.track2-release-name }}
+      helm-chart-name: ${{ inputs.probation-chart-name }}
+      release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
 
-  deploy_track2_prod:
-    name: Deploy track 2 → probation-prod
+  deploy_probation_prod:
+    name: Deploy probation → probation-prod
     if: |
       always() &&
       github.ref == inputs.deploy-ref &&
-      inputs.enable-track2 &&
-      needs.deploy_track2_preprod.result == 'success' &&
-      needs.helm_lint_track2_prod.result == 'success' &&
+      inputs.enable-probation &&
+      needs.deploy_probation_preprod.result == 'success' &&
+      needs.helm_lint_probation_prod.result == 'success' &&
       needs.app_version.result == 'success'
-    needs: [deploy_track2_preprod, helm_lint_track2_prod, app_version]
+    needs: [deploy_probation_preprod, helm_lint_probation_prod, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
-      environment: ${{ inputs.track2-prod-env }}
+      environment: ${{ inputs.probation-prod-env }}
       app-version: ${{ needs.app_version.outputs.version }}
-      helm-chart-name: ${{ inputs.track2-chart-name }}
-      release-name: ${{ inputs.track2-release-name }}
+      helm-chart-name: ${{ inputs.probation-chart-name }}
+      release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'true'

@@ -1,5 +1,5 @@
 # ============================================================================
-# Copy-paste starter: dual-track pipeline thin caller (Gradle / Kotlin)
+# Copy-paste starter: Java / Kotlin Cloud Platform app
 # ============================================================================
 # Copy into the consuming repo as:
 #   .github/workflows/pipeline.yml
@@ -30,14 +30,7 @@ jobs:
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/frontend_java_pipeline.yml@v1
     secrets: inherit
     with:
-      java-version: '21'
-      gradle-check-command: 'check'
-
-      track1-chart-name: ''
-      track1-release-name: ''
-
-      enable-track2: true
-      track2-chart-name: 'CHANGE_ME'
-      track2-release-name: 'CHANGE_ME'
-
+      # Flip on for MI-style dual product (prison + probation).
+      # Chart/env defaults live in the workflow; override only if needed.
+      enable-probation: false
       slack-channel: 'dpr_cicd_approvals'

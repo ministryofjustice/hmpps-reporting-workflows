@@ -1,5 +1,5 @@
 # ============================================================================
-# Copy-paste starter: dual-track pipeline thin caller (Node)
+# Copy-paste starter: Node Cloud Platform app
 # ============================================================================
 # Copy into the consuming repo as:
 #   .github/workflows/pipeline.yml
@@ -28,13 +28,5 @@ jobs:
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/frontend_node_pipeline.yml@v1
     secrets: inherit
     with:
-      node-version: '24'
-
-      track1-chart-name: ''
-      track1-release-name: ''
-
-      enable-track2: true
-      track2-chart-name: 'hmpps-probation-mi-ui'
-      track2-release-name: 'hmpps-probation-mi-ui'
-
+      enable-probation: false
       slack-channel: 'dpr_cicd_approvals'
