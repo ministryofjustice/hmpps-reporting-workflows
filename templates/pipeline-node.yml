@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   pipeline:
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_pipeline.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/frontend_node_pipeline.yml@v1
     secrets: inherit
     with:
       node-version: '24'

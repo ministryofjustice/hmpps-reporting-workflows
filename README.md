@@ -21,8 +21,8 @@ Use **workflow_dispatch** for minor/major bumps.
 ## Layout
 
 - `.github/workflows/` — reusable `workflow_call` workflows:
-  - `reporting_pipeline.yml` — Gradle/Kotlin dual-track build/deploy (MI)
-  - `node_pipeline.yml` — Node dual-track build/deploy (MI-UI)
+  - `frontend_java_pipeline.yml` — Gradle/Kotlin dual-track build/deploy (MI API)
+  - `frontend_node_pipeline.yml` — Node dual-track build/deploy (MI UI)
   - `pr_checks.yml` — PR checks (`stack: gradle|node`)
   - `gradle_validate.yml`, `node_validate.yml`, `helm_lint.yml`,
     `docker_build.yml`, `deploy_env.yml` — primitives
@@ -32,6 +32,7 @@ Use **workflow_dispatch** for minor/major bumps.
   building blocks in `hmpps-reporting-actions` (e.g. `setup-node-npm`).
   Workflows may inline `actions/setup-node` until that actions tag is cut.
 - `templates/` — copy-paste thin callers for apps
+  (`pipeline-java.yml`, `pipeline-node.yml`, …)
 - `docs/` — versioning / process docs
 
 ## App stub convention

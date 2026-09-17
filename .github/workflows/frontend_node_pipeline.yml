@@ -1,11 +1,11 @@
-name: Node pipeline (dual-track)
+name: Frontend Node pipeline (dual-track)
 
-# Dual-track build/deploy for Node Cloud Platform apps (MI-UI Phase 2).
-# Mirrors reporting_pipeline.yml topology; validate uses node_validate
+# Dual-track build/deploy for Node Cloud Platform apps (MI-UI).
+# Mirrors frontend_java_pipeline.yml topology; validate uses node_validate
 # instead of gradle_validate. Track-1 helm lint covers all four envs
 # (matches hmpps-circleci-orb usage in MI-UI CircleCI config).
 #
-# Nested uses: must be fully-qualified (see reporting_pipeline.yml header).
+# Nested uses: must be fully-qualified (see frontend_java_pipeline.yml header).
 # Integration tests, acceptance tests, and Sentry secret updates are not
 # in this first cut — add as follow-up reusable workflows/actions.
 
@@ -97,7 +97,7 @@ on:
         default: 'refs/heads/main'
 
       deploy-dev-on-feature-branches:
-        description: Build image and deploy track1/track2 DEV on non-main branches
+        description: Build image and deploy track1 DEV on non-main branches
         type: boolean
         default: true
 
@@ -302,7 +302,7 @@ jobs:
     name: Deploy track 2 → probation-dev
     if: |
       always() &&
-      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
+      github.ref == inputs.deploy-ref &&
       inputs.enable-track2 &&
       needs.build_docker.result == 'success' &&
       needs.helm_lint_track2_dev.result == 'success' &&

@@ -1,9 +1,7 @@
-name: Reporting pipeline (dual-track)
+name: Frontend Java pipeline (dual-track)
 
-# High-level orchestrator for the CircleCI-orb-equivalent dual-track,
-# approval-gated deploy topology shared by hmpps-digital-prison-reporting-mi
-# (Phase 1) and hmpps-digital-prison-reporting-mi-ui (Phase 2, via toggles —
-# see Task 11 in the migration plan).
+# High-level orchestrator for Kotlin/Java Cloud Platform apps
+# (hmpps-digital-prison-reporting-mi). Dual-track, approval-gated deploy.
 #
 # Track 1 — main API:       dev → [approval] → {test, preprod} (parallel)
 #                                              → prod (after preprod)
@@ -11,9 +9,9 @@ name: Reporting pipeline (dual-track)
 #                                              {probation-test, probation-preprod}
 #                                              → probation-prod (after preprod)
 #
-# This mirrors CircleCI's build-test-and-deploy DAG documented in
-# templates/pipeline-dual-track.yml, where `test` and `preprod` both fork
-# directly off `dev` rather than chaining dev → test → preprod → prod.
+# This mirrors CircleCI's build-test-and-deploy DAG, where `test` and
+# `preprod` both fork directly off `dev` rather than chaining
+# dev → test → preprod → prod.
 #
 # Only 2 tracks exist today (MI API main + probation). Per-track inputs are
 # used instead of a generic JSON/matrix "tracks" schema — see the plan's
@@ -135,9 +133,10 @@ on:
         default: 'refs/heads/main'
 
       # Feature / PR branch pushes (pipeline.yml is push-based) build +
-      # deploy to DEV only when true. Higher envs stay on deploy-ref.
+      # deploy track1 DEV only when true. Track2 DEV and higher envs stay
+      # on deploy-ref (main).
       deploy-dev-on-feature-branches:
-        description: Build image and deploy track1/track2 DEV on non-main branches
+        description: Build image and deploy track1 DEV on non-main branches
         type: boolean
         default: true
 
@@ -218,7 +217,8 @@ jobs:
 
   # ── Docker build ─────────────────────────────────────────────────────
   # Runs on deploy-ref (main) always, and on feature/PR branches when
-  # deploy-dev-on-feature-branches is true. :latest is only tagged on main.
+  # deploy-dev-on-feature-branches is true (track1 DEV only). :latest is
+  # only tagged on main.
   # `needs:` always lists the track2 helm-lint jobs even when enable-track2
   # is false — when a needed job is skipped (its own `if:` was false), GHA
   # skips every job that needs it by default, so the `if:` below has to
@@ -332,7 +332,7 @@ jobs:
     name: Deploy track 2 → probation-dev
     if: |
       always() &&
-      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
+      github.ref == inputs.deploy-ref &&
       inputs.enable-track2 &&
       needs.build_docker.result == 'success' &&
       needs.helm_lint_track2_dev.result == 'success' &&
