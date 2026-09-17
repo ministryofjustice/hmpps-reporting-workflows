@@ -4,9 +4,10 @@
 # Copy into the consuming repo as:
 #   .github/workflows/bump-version.yml
 #
-# Git branch/commit/tag/PR steps live in
-# hmpps-reporting-actions/actions/bump-version. This file only supplies
-# stack-specific version discovery + apply command.
+# Apps pin this reusable workflow at @v1 only. Composite action SHAs
+# (checkout, setup-node-npm, bump-version) live in
+# hmpps-reporting-workflows/.github/workflows/bump_version.yml — never
+# call hmpps-reporting-actions from an app stub.
 # ============================================================================
 
 name: Bump version
@@ -15,27 +16,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  bump-version:
-    runs-on: ubuntu-latest
-
-    permissions:
-      pull-requests: write
-      contents: write
-
-    steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-
-      - name: Get current library version
-        id: get-version
-        run: |
-          CURRENT_VERSION=$(curl -s --request GET https://repo1.maven.org/maven2/uk/gov/justice/service/hmpps/hmpps-digital-prison-reporting-lib/maven-metadata.xml | grep -oP '(?<=<version>)[^<]+' | grep -v -e '2024-02-27' -e '2024-02-28' | tail -n1)
-          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Bump version
-        uses: ministryofjustice/hmpps-reporting-actions/actions/bump-version@v1
-        with:
-          current-version: ${{ steps.get-version.outputs.current_version }}
-          apply-command: >-
-            perl -pi -e 's|implementation\("uk.gov.justice.service.hmpps:hmpps-digital-prison-reporting-lib:\d+\.\d+\.\d+"\)|implementation("uk.gov.justice.service.hmpps:hmpps-digital-prison-reporting-lib:${{ steps.get-version.outputs.current_version }}")|' build.gradle.kts
-          files-to-commit: build.gradle.kts
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+  bump:
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/bump_version.yml@v1
+    secrets: inherit
+    with:
+      # gradle → Maven reporting-lib; node → npm reporting-frontend (+ SLSA)
+      stack: gradle
+      # Optional overrides (defaults match MI / MI-UI presets):
+      # node-version: '24'
+      # npm-package: '@ministryofjustice/hmpps-digital-prison-reporting-frontend'
+      # run-slsa: true
+      # resolve-command: ''   # shell that prints version on stdout
+      # apply-command: ''     # use $VERSION for the resolved version
+      # files-to-commit: ''

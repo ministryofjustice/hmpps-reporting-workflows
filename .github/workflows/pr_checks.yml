@@ -85,7 +85,7 @@ jobs:
       # ── Node ─────────────────────────────────────────────────────────
       - name: Setup Node and npm
         if: inputs.stack == 'node'
-        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@v1
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@0536501a3e9405217015e0a07c60680f6df44628 # v1.0.3
         with:
           node-version: ${{ inputs.node-version }}
           install-command: ${{ inputs.install-command }}

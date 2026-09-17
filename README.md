@@ -24,14 +24,18 @@ Use **workflow_dispatch** for minor/major bumps.
   - `frontend_java_pipeline.yml` — Gradle/Kotlin build/deploy (primary + optional probation)
   - `frontend_node_pipeline.yml` — Node build/deploy (primary + optional probation)
   - `pr_checks.yml` — PR checks (`stack: gradle|node`)
+  - `bump_version.yml` — bump shared lib (`stack: gradle|node`); SHA pins live here
   - `gradle_validate.yml`, `node_validate.yml`, `helm_lint.yml`,
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
   - `security_drift_check.yml` — upstream pin drift guard
 - Step building blocks live in `hmpps-reporting-actions`
-  (`setup-node-npm`, `bump-version`) — workflows call them via `@v1`
+  (`setup-node-npm`, `bump-version`). **Only this repo** pins composites to a
+  full commit SHA (MoJ org policy), e.g. `@0536501… # v1.0.3`. Apps pin
+  workflows `@v1` and never call actions directly — see
+  [`docs/versioning.md`](docs/versioning.md#governance-who-pins-what).
 - `templates/` — copy-paste thin callers for apps
-  (`pipeline-java.yml`, `pipeline-node.yml`, …)
+  (`pipeline-java.yml`, `pipeline-node.yml`, `bump-version.yml`, …)
 - `docs/` — versioning / process docs
 
 ### Deploy model
@@ -56,9 +60,11 @@ Every consuming app uses the same filenames:
   pipeline.yml        # push / workflow_dispatch
   pull-request.yml    # pull_request
   schedule.yml        # scheduled security
+  bump-version.yml    # optional: workflow_dispatch → bump_version.yml@v1
 ```
 
 Copy from `templates/`, fill repo-specific `with:` inputs, pin `@v1`.
+Do not put `hmpps-reporting-actions` SHAs in app stubs.
 
 ## Related
 
