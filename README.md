@@ -25,6 +25,7 @@ Use **workflow_dispatch** for minor/major bumps.
   - `frontend_node_pipeline.yml` — Node build/deploy (primary + optional probation)
   - `pr_checks.yml` — PR checks (`stack: gradle|node`)
   - `bump_version.yml` — bump shared lib (`stack: gradle|node`); SHA pins live here
+  - `generic_release_pipeline.yml` — helm-only promote of existing `Build.<sha>` (no rebuild)
   - `gradle_validate.yml`, `node_validate.yml`, `helm_lint.yml`,
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
@@ -35,7 +36,7 @@ Use **workflow_dispatch** for minor/major bumps.
   workflows `@v1` and never call actions directly — see
   [`docs/versioning.md`](docs/versioning.md#governance-who-pins-what).
 - `templates/` — copy-paste thin callers for apps
-  (`pipeline-java.yml`, `pipeline-node.yml`, `bump-version.yml`, …)
+  (`pipeline-java.yml`, `pipeline-node.yml`, `bump-version.yml`, `release-app.yml`, …)
 - `docs/` — versioning / process docs
 
 ### Deploy model
@@ -51,6 +52,25 @@ with:
 Other Java/Node apps leave `enable-probation` false (default). Future products
 should be further **named** presets (e.g. activities), not numbered flags.
 
+### IP allowlists (required for VPN access)
+
+`deploy_env` expands `generic-service.allowlist.groups` (e.g. `internal`) using
+the same mechanism as CircleCI `hmpps-circleci-orb` / `deploy_env.sh`:
+
+1. Reads org-level Actions **variables** published org-wide by
+   [`hmpps-ip-allowlists`](https://github.com/ministryofjustice/hmpps-ip-allowlists):
+   `vars.HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ` (+ optional
+   `vars.HMPPS_IP_ALLOWLIST_GROUPS_VERSION`). These are picked up
+   automatically — no per-repo setup.
+2. Else fetches `ip-allowlist-groups.yaml` via `gh api` (needs a token that
+   can read that internal repo — set secret `IP_ALLOWLISTS_GITHUB_TOKEN` if
+   `GITHUB_TOKEN` cannot).
+3. Fails the deploy if neither source works (prevents silently shipping an
+   ingress without VPN/internal CIDRs).
+
+Without this, Helm only applies literal CIDRs from values files and nginx
+ingress returns **403** for MoJ VPN users (port-forward still works).
+
 ## App stub convention
 
 Every consuming app uses the same filenames:
@@ -61,6 +81,7 @@ Every consuming app uses the same filenames:
   pull-request.yml    # pull_request
   schedule.yml        # scheduled security
   bump-version.yml    # optional: workflow_dispatch → bump_version.yml@v1
+  release.yml         # optional: helm-only promote (releases board / manual)
 ```
 
 Copy from `templates/`, fill repo-specific `with:` inputs, pin `@v1`.

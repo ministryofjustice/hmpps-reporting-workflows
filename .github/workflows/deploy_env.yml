@@ -20,6 +20,12 @@ name: Deploy to Environment
 # k8s secrets required (auto-populated by Cloud Platform Terraform module):
 #   KUBE_CERT, KUBE_CLUSTER, KUBE_NAMESPACE, KUBE_TOKEN
 #
+# IP allowlist groups (published org-wide as Actions VARIABLES by
+# ministryofjustice/hmpps-ip-allowlists publish.yml):
+#   vars.HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ, vars.HMPPS_IP_ALLOWLIST_GROUPS_VERSION
+# Without these, allowlist.groups in values-*.yaml do not expand to CIDRs and
+# nginx returns 403 for VPN users (port-forward still works).
+#
 # Approval gates (CircleCI type: approval) are handled by GitHub Environment
 # required reviewers — no extra workflow step needed.
 
@@ -48,6 +54,12 @@ on:
         default: 'helm_deploy'
       helm-additional-args:
         description: Extra arguments passed to helm upgrade
+        type: string
+        default: ''
+      # Optional YAML from a releases-board config/values.yaml (written to a
+      # temp file and passed as an extra --values).
+      release-values-yaml:
+        description: Extra Helm values YAML content
         type: string
         default: ''
       helm-timeout:
@@ -81,6 +93,12 @@ on:
       NONPROD_RELEASES_SLACK_CHANNEL:
         required: false
       PROD_RELEASES_SLACK_CHANNEL:
+        required: false
+      # Optional PAT/App token that can read ministryofjustice/hmpps-ip-allowlists,
+      # used as a fallback when org var HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ is
+      # unavailable. The allowlist itself comes from org Actions VARIABLES
+      # (vars.HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ) — no secret needed normally.
+      IP_ALLOWLISTS_GITHUB_TOKEN:
         required: false
 
 permissions:
@@ -190,6 +208,34 @@ jobs:
             echo "set-arg=image.tag" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── Optional release-board values ────────────────────────────────
+      - name: Write release values override
+        id: release-values
+        env:
+          VALUES: ${{ inputs.release-values-yaml }}
+        run: |
+          set -euo pipefail
+          if [ -n "${VALUES}" ] && echo "${VALUES}" | grep -qvE '^[[:space:]]*(#.*)?$'; then
+            printf '%s\n' "${VALUES}" > /tmp/release-values.yaml
+            echo "flag=--values /tmp/release-values.yaml" >> "$GITHUB_OUTPUT"
+            echo "Using extra release values override"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── HMPPS IP allowlist groups (CircleCI deploy_env.sh parity) ─────
+      # Expands allowlist.groups (internal, mojvpn, …) into CIDRs on the
+      # ingress. Without it nginx returns 403 for VPN users.
+      # Composite actions cannot read vars/secrets, so the org variables
+      # published by ministryofjustice/hmpps-ip-allowlists are passed in here.
+      - name: Prepare IP allowlist groups
+        id: allowlist
+        uses: ministryofjustice/hmpps-reporting-actions/actions/prepare-ip-allowlist@0536501a3e9405217015e0a07c60680f6df44628 # v1.0.3 — TODO: bump to the tag/SHA that contains prepare-ip-allowlist
+        with:
+          allowlist-yaml-gz: ${{ vars.HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ }}
+          allowlist-version: ${{ vars.HMPPS_IP_ALLOWLIST_GROUPS_VERSION }}
+          github-token: ${{ secrets.IP_ALLOWLISTS_GITHUB_TOKEN != '' && secrets.IP_ALLOWLISTS_GITHUB_TOKEN || github.token }}
+
       # ── Helm upgrade/install ─────────────────────────────────────────
       - name: Print Helm deployment details
         run: |
@@ -200,15 +246,20 @@ jobs:
           echo "Image set    : ${{ steps.image-tag.outputs.set-arg }}=${{ inputs.app-version }}"
           echo "Timeout      : ${{ inputs.helm-timeout }}"
           echo "Extra args   : ${{ inputs.helm-additional-args }}"
+          echo "Release vals : ${{ steps.release-values.outputs.flag }}"
+          echo "Allowlist    : ${{ steps.allowlist.outputs.helm-args }}"
       - name: Helm upgrade
         run: |
           helm upgrade "${{ steps.names.outputs.release }}" \
             "${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}" \
             --install \
             --wait \
+            --reset-values \
             --timeout "${{ inputs.helm-timeout }}" \
             --namespace "${{ secrets.KUBE_NAMESPACE }}" \
             --values "${{ inputs.helm-dir }}/values-${{ inputs.environment }}.yaml" \
+            ${{ steps.allowlist.outputs.helm-args }} \
+            ${{ steps.release-values.outputs.flag }} \
             --set "${{ steps.image-tag.outputs.set-arg }}=${{ inputs.app-version }}" \
             ${{ inputs.helm-additional-args }}
 
