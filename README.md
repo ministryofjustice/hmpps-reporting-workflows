@@ -32,7 +32,7 @@ Use **workflow_dispatch** for minor/major bumps.
   - `security_drift_check.yml` — upstream pin drift guard
 - Step building blocks live in `hmpps-reporting-actions`
   (`setup-node-npm`, `bump-version`). **Only this repo** pins composites to a
-  full commit SHA (MoJ org policy), e.g. `@0536501… # v1.0.3`. Apps pin
+  full commit SHA (MoJ org policy), e.g. `@21ecad8… # v1.0.4`. Apps pin
   workflows `@v1` and never call actions directly — see
   [`docs/versioning.md`](docs/versioning.md#governance-who-pins-what).
 - `templates/` — copy-paste thin callers for apps

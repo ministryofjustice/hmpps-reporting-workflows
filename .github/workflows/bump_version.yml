@@ -64,7 +64,7 @@ jobs:
 
       - name: Setup Node and npm
         if: inputs.stack == 'node'
-        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@0536501a3e9405217015e0a07c60680f6df44628 # v1.0.3
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@21ecad84df30d8f03981b2b20106f16976af6b34 # v1.0.4
         with:
           node-version: ${{ inputs.node-version }}
 
@@ -142,7 +142,7 @@ jobs:
           echo "files=${FILES}" >> "$GITHUB_OUTPUT"
 
       - name: Bump version
-        uses: ministryofjustice/hmpps-reporting-actions/actions/bump-version@0536501a3e9405217015e0a07c60680f6df44628 # v1.0.3
+        uses: ministryofjustice/hmpps-reporting-actions/actions/bump-version@21ecad84df30d8f03981b2b20106f16976af6b34 # v1.0.4
         with:
           current-version: ${{ steps.version.outputs.value }}
           apply-command: ${{ steps.apply.outputs.command }}
