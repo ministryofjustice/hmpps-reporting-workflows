@@ -230,7 +230,7 @@ jobs:
       # published by ministryofjustice/hmpps-ip-allowlists are passed in here.
       - name: Prepare IP allowlist groups
         id: allowlist
-        uses: ministryofjustice/hmpps-reporting-actions/actions/prepare-ip-allowlist@21ecad84df30d8f03981b2b20106f16976af6b34 # v1.0.4
+        uses: ministryofjustice/hmpps-reporting-actions/actions/prepare-ip-allowlist@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
         with:
           allowlist-yaml-gz: ${{ vars.HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ }}
           allowlist-version: ${{ vars.HMPPS_IP_ALLOWLIST_GROUPS_VERSION }}
