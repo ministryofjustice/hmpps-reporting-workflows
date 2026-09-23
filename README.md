@@ -28,8 +28,10 @@ Use **workflow_dispatch** for minor/major bumps.
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
   - `security_drift_check.yml` — upstream pin drift guard
+  - `validate.yml` — actionlint, shellcheck, unit tests
 - Step building blocks live in `hmpps-reporting-actions`
-  (`setup-node-npm`, `bump-version`) — workflows call them via `@v1`
+  (`setup-node-npm`, `bump-version`, `update-sentry-release-secret`) — workflows call them via `@v1`
+- `scripts/` — shared shell helpers used by workflows / unit-tested locally
 - `templates/` — copy-paste thin callers for apps
   (`pipeline-java.yml`, `pipeline-node.yml`, …)
 - `docs/` — versioning / process docs
@@ -46,6 +48,29 @@ with:
 
 Other Java/Node apps leave `enable-probation` false (default). Future products
 should be further **named** presets (e.g. activities), not numbered flags.
+
+### Optional Sentry (primary deploys)
+
+Matches CircleCI MI-UI `update_sentry_git_ref_secret`: before each **primary**
+Helm deploy, optionally patch a Kubernetes secret key (default
+`RELEASE_GIT_SHA`) with the raw git SHA of the artifact being deployed
+(`Build.<sha>` → `<sha>`). Probation deploys are never patched (same as
+CircleCI).
+
+Cloud Platform Terraform does **not** create or manage the Sentry secret; it
+must already exist in the target namespace.
+
+```yaml
+with:
+  enable-sentry: true
+  sentry-secret-name: hmpps-digital-prison-reporting-mi-ui-sentry
+```
+
+Defaults keep Sentry off for existing consumers (non-breaking).
+
+Docker builds optionally mount BuildKit secret `SENTRY_AUTH_TOKEN` (via
+`secrets: inherit`) for apps whose Dockerfile uploads source maps. Leave the
+secret unset to skip upload.
 
 ## App stub convention
 

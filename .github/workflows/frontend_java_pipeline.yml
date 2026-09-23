@@ -108,6 +108,24 @@ on:
         type: boolean
         default: true
 
+      # ── Optional Sentry (primary deploys only; default off) ───────────
+      enable-sentry:
+        description: Patch Sentry RELEASE_GIT_SHA secret before primary Helm deploys
+        type: boolean
+        default: false
+      sentry-secret-name:
+        description: K8s secret name to patch (required when enable-sentry is true)
+        type: string
+        default: ''
+      sentry-secret-key:
+        description: Key within the secret to update
+        type: string
+        default: 'RELEASE_GIT_SHA'
+      sentry-release-sha:
+        description: Raw git SHA override; when empty, derived from app-version
+        type: string
+        default: ''
+
 permissions:
   contents: read
   packages: write
@@ -230,6 +248,10 @@ jobs:
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
+      enable-sentry: ${{ inputs.enable-sentry }}
+      sentry-secret-name: ${{ inputs.sentry-secret-name }}
+      sentry-secret-key: ${{ inputs.sentry-secret-key }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha }}
 
   deploy_primary_test:
     name: Deploy primary → test
@@ -245,6 +267,10 @@ jobs:
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
+      enable-sentry: ${{ inputs.enable-sentry }}
+      sentry-secret-name: ${{ inputs.sentry-secret-name }}
+      sentry-secret-key: ${{ inputs.sentry-secret-key }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha }}
 
   deploy_primary_preprod:
     name: Deploy primary → preprod
@@ -260,6 +286,10 @@ jobs:
       helm-dir: ${{ inputs.helm-dir }}
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'false'
+      enable-sentry: ${{ inputs.enable-sentry }}
+      sentry-secret-name: ${{ inputs.sentry-secret-name }}
+      sentry-secret-key: ${{ inputs.sentry-secret-key }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha }}
 
   deploy_primary_prod:
     name: Deploy primary → prod
@@ -276,6 +306,10 @@ jobs:
       helm-timeout: ${{ inputs.helm-timeout }}
       slack-notification: 'true'
       slack-channel: ${{ inputs.slack-channel }}
+      enable-sentry: ${{ inputs.enable-sentry }}
+      sentry-secret-name: ${{ inputs.sentry-secret-name }}
+      sentry-secret-key: ${{ inputs.sentry-secret-key }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha }}
 
   # ── Probation preset (main only) ─────────────────────────────────────
 

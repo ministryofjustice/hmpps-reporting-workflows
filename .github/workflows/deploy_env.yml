@@ -67,6 +67,30 @@ on:
         type: string
         default: 'dpr_cicd_approvals'
 
+      # ── Optional Sentry release secret patch (pre-Helm) ──────────────
+      # Replaces CircleCI MI-UI job update_sentry_git_ref_secret.
+      # Cloud Platform Terraform does not create the Sentry secret; it must
+      # already exist in the target namespace. Defaults keep behaviour off
+      # for consumers that do not use Sentry.
+      enable-sentry:
+        description: Patch Sentry release SHA into a Kubernetes secret before Helm deploy
+        type: boolean
+        default: false
+      sentry-secret-name:
+        description: K8s secret name to patch (required when enable-sentry is true)
+        type: string
+        default: ''
+      sentry-secret-key:
+        description: Key within the secret to update
+        type: string
+        default: 'RELEASE_GIT_SHA'
+      sentry-release-sha:
+        description: >-
+          Raw git SHA override. When empty, derived by stripping Build. from
+          app-version (Build.<40-hex>).
+        type: string
+        default: ''
+
     secrets:
       KUBE_CERT:
         required: true
@@ -154,6 +178,52 @@ jobs:
 
           kubectl config use-context deploy
 
+      # ── Optional Sentry release secret (before Helm) ─────────────────
+      # Matches CircleCI MI-UI: update_sentry_git_ref_secret then deploy_env.
+      # Reuses the kubectl auth above; same KUBE_NAMESPACE as Helm.
+      # Logic mirrored in scripts/resolve-sentry-release-sha.sh (unit-tested).
+      - name: Resolve Sentry release SHA
+        id: sentry-sha
+        if: inputs.enable-sentry
+        env:
+          ENABLE_SENTRY: ${{ inputs.enable-sentry }}
+          SENTRY_SECRET_NAME: ${{ inputs.sentry-secret-name }}
+          SENTRY_RELEASE_SHA: ${{ inputs.sentry-release-sha }}
+          APP_VERSION: ${{ inputs.app-version }}
+        run: |
+          set -euo pipefail
+          if [ "${ENABLE_SENTRY}" != "true" ]; then
+            exit 0
+          fi
+          if [ -z "${SENTRY_SECRET_NAME}" ]; then
+            echo "error: sentry-secret-name is required when enable-sentry is true" >&2
+            exit 1
+          fi
+          sha=""
+          if [ -n "${SENTRY_RELEASE_SHA}" ]; then
+            sha="${SENTRY_RELEASE_SHA}"
+          elif [[ "${APP_VERSION}" =~ ^Build\.([0-9a-f]{40})$ ]]; then
+            sha="${BASH_REMATCH[1]}"
+          else
+            echo "error: cannot derive Sentry release SHA from app-version '${APP_VERSION}' (expected Build.<40-hex> or set sentry-release-sha)" >&2
+            exit 1
+          fi
+          if [ -z "${sha}" ]; then
+            echo "error: resolved Sentry release SHA is empty" >&2
+            exit 1
+          fi
+          echo "Resolved Sentry release SHA from app-version (or override)"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Sentry release secret
+        if: inputs.enable-sentry
+        uses: ministryofjustice/hmpps-reporting-actions/actions/update-sentry-release-secret@v1
+        with:
+          secret-name: ${{ inputs.sentry-secret-name }}
+          secret-key: ${{ inputs.sentry-secret-key }}
+          namespace: ${{ secrets.KUBE_NAMESPACE }}
+          release-sha: ${{ steps.sentry-sha.outputs.sha }}
+
       # ── Show changelog (optional) ────────────────────────────────────
       # Matches CircleCI: show_changelog parameter
       - name: Show version history
@@ -177,7 +247,7 @@ jobs:
           helm dependency build \
             "${{ inputs.helm-dir }}/${{ steps.names.outputs.chart }}"
 
-       # ── Resolve image tag override path ──────────────────────────────
+      # ── Resolve image tag override path ──────────────────────────────
       # Matches CircleCI's deploy_env.sh: charts using generic-service as a
       # dependency need generic-service.image.tag, not image.tag.
       - name: Resolve image tag override path
