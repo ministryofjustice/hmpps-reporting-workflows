@@ -93,7 +93,7 @@ on:
         type: string
         default: 'refs/heads/main'
       deploy-dev-on-feature-branches:
-        description: Build image and deploy primary DEV on non-main branches
+        description: Build image and deploy primary + probation DEV on non-main branches
         type: boolean
         default: true
 
@@ -331,7 +331,7 @@ jobs:
     name: Deploy probation → probation-dev
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       inputs.enable-probation &&
       needs.build_docker.result == 'success' &&
       needs.helm_lint_probation_dev.result == 'success' &&

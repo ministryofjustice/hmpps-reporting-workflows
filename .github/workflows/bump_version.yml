@@ -1,0 +1,151 @@
+name: Bump version
+
+# Reusable bump workflow — apps pin @v1 only. Composite action SHAs are
+# pinned here once (MoJ org policy). Do not call hmpps-reporting-actions
+# from consuming repos.
+
+on:
+  workflow_call:
+    inputs:
+      stack:
+        description: gradle (Maven lib) or node (npm package)
+        type: string
+        default: 'gradle'
+      node-version:
+        type: string
+        default: '24'
+      # Override baked-in resolve/apply when needed (empty = use stack preset)
+      resolve-command:
+        description: Shell that prints the version to bump to on stdout
+        type: string
+        default: ''
+      apply-command:
+        description: Shell that applies VERSION (use $VERSION in the command)
+        type: string
+        default: ''
+      files-to-commit:
+        type: string
+        default: ''
+      run-slsa:
+        description: Run SLSA check before bump (node stack)
+        type: boolean
+        default: true
+      slsa-package-exclusion:
+        type: string
+        default: '@ministryofjustice/hmpps-digital-prison-reporting-frontend'
+      npm-package:
+        description: npm package to bump (node stack)
+        type: string
+        default: '@ministryofjustice/hmpps-digital-prison-reporting-frontend'
+      maven-artifact-path:
+        description: Maven Central path under .../maven2/ for metadata.xml
+        type: string
+        default: 'uk/gov/justice/service/hmpps/hmpps-digital-prison-reporting-lib'
+      gradle-coordinate:
+        description: Gradle dependency coordinate without version
+        type: string
+        default: 'uk.gov.justice.service.hmpps:hmpps-digital-prison-reporting-lib'
+      base-branch:
+        type: string
+        default: 'main'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Bump version
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node and npm
+        if: inputs.stack == 'node'
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      - name: SLSA - supply chain attack mitigation
+        if: inputs.stack == 'node' && inputs.run-slsa
+        uses: ministryofjustice/devsecops-actions/sca/slsa@7dc13c20e2bf541b8a77fa1320a04983b18846f6
+        with:
+          security-patch-package-exclusion: ${{ inputs.slsa-package-exclusion }}
+
+      - name: Resolve target version
+        id: version
+        env:
+          STACK: ${{ inputs.stack }}
+          RESOLVE_OVERRIDE: ${{ inputs.resolve-command }}
+          MAVEN_PATH: ${{ inputs.maven-artifact-path }}
+          NPM_PACKAGE: ${{ inputs.npm-package }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RESOLVE_OVERRIDE}" ]; then
+            VERSION=$(bash -c "${RESOLVE_OVERRIDE}")
+          elif [ "${STACK}" = "gradle" ]; then
+            VERSION=$(curl -s --request GET \
+              "https://repo1.maven.org/maven2/${MAVEN_PATH}/maven-metadata.xml" \
+              | grep -oP '(?<=<version>)[^<]+' \
+              | grep -v -e '2024-02-27' -e '2024-02-28' \
+              | tail -n1)
+          elif [ "${STACK}" = "node" ]; then
+            VERSION=$(npm view "${NPM_PACKAGE}" version)
+          else
+            echo "Unknown stack: ${STACK} (use gradle|node or set resolve-command)" >&2
+            exit 1
+          fi
+          if [ -z "${VERSION}" ]; then
+            echo "Failed to resolve version" >&2
+            exit 1
+          fi
+          echo "Resolved version: ${VERSION}"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build apply command and file list
+        id: apply
+        env:
+          STACK: ${{ inputs.stack }}
+          VERSION: ${{ steps.version.outputs.value }}
+          APPLY_OVERRIDE: ${{ inputs.apply-command }}
+          FILES_OVERRIDE: ${{ inputs.files-to-commit }}
+          GRADLE_COORD: ${{ inputs.gradle-coordinate }}
+          NPM_PACKAGE: ${{ inputs.npm-package }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLY_OVERRIDE}" ]; then
+            CMD="${APPLY_OVERRIDE//\$VERSION/${VERSION}}"
+          elif [ "${STACK}" = "gradle" ]; then
+            # Match MI stub: escape \( \" \) in the search pattern for perl
+            CMD="perl -pi -e 's|implementation\\(\"${GRADLE_COORD}:\\d+\\.\\d+\\.\\d+\"\\)|implementation(\"${GRADLE_COORD}:${VERSION}\")|' build.gradle.kts"
+          elif [ "${STACK}" = "node" ]; then
+            CMD="npm install ${NPM_PACKAGE}@^${VERSION} --save"
+          else
+            echo "Unknown stack: ${STACK}" >&2
+            exit 1
+          fi
+          {
+            echo "command<<EOF"
+            echo "${CMD}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ -n "${FILES_OVERRIDE}" ]; then
+            FILES="${FILES_OVERRIDE}"
+          elif [ "${STACK}" = "gradle" ]; then
+            FILES="build.gradle.kts"
+          elif [ "${STACK}" = "node" ]; then
+            FILES="package.json package-lock.json"
+          fi
+          echo "files=${FILES}" >> "$GITHUB_OUTPUT"
+
+      - name: Bump version
+        uses: ministryofjustice/hmpps-reporting-actions/actions/bump-version@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
+        with:
+          current-version: ${{ steps.version.outputs.value }}
+          apply-command: ${{ steps.apply.outputs.command }}
+          files-to-commit: ${{ steps.apply.outputs.files }}
+          base-branch: ${{ inputs.base-branch }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

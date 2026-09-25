@@ -1,0 +1,117 @@
+name: Generic release pipeline
+
+# Helm-only promote of an existing image tag (Build.<sha>).
+# No validate / docker build — for delayed preprod/prod from a releases board.
+#
+# App stubs (e.g. MI-UI .github/workflows/release.yml) call this via
+# workflow_call. digital-prison-reporting-releases dispatches those stubs.
+# Does not use CircleCI hmpps-reporting-orb / generic_release.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment name (dev|test|preprod|prod|…)
+        type: string
+        required: true
+      app-version:
+        description: Existing image tag to deploy (e.g. Build.<sha>)
+        type: string
+        required: true
+      helm-chart-name:
+        type: string
+        default: ''
+      release-name:
+        type: string
+        default: ''
+      helm-dir:
+        type: string
+        default: 'helm_deploy'
+      helm-timeout:
+        type: string
+        default: '5m'
+      helm-additional-args:
+        type: string
+        default: ''
+      release-values-yaml:
+        description: Extra Helm values from releases config/values.yaml
+        type: string
+        default: ''
+      verify-image:
+        description: Fail if the GHCR image tag is missing
+        type: boolean
+        default: true
+      docker-registry:
+        type: string
+        default: 'ghcr.io'
+      registry-org:
+        type: string
+        default: 'ministryofjustice'
+      slack-notification:
+        type: string
+        default: 'false'
+      slack-channel:
+        type: string
+        default: 'dpr_cicd_approvals'
+
+    secrets:
+      KUBE_CERT:
+        required: true
+      KUBE_CLUSTER:
+        required: true
+      KUBE_NAMESPACE:
+        required: true
+      KUBE_TOKEN:
+        required: true
+      HMPPS_SRE_SLACK_BOT_TOKEN:
+        required: false
+      # Optional fallback token for reading hmpps-ip-allowlists; the allowlist
+      # normally comes from org var HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ.
+      IP_ALLOWLISTS_GITHUB_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify_image:
+    name: Verify image exists
+    if: inputs.verify-image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check GHCR tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:${{ inputs.app-version }}
+        run: |
+          set -euo pipefail
+          echo "Checking image: ${IMAGE}"
+          echo "${GH_TOKEN}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          if ! docker manifest inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "::error::Image not found in registry: ${IMAGE}"
+            echo "Build and push this tag from the app pipeline before promoting."
+            exit 1
+          fi
+          echo "Image found."
+
+  deploy:
+    name: Deploy ${{ inputs.environment }}
+    needs: [verify_image]
+    if: |
+      always() &&
+      (needs.verify_image.result == 'success' || needs.verify_image.result == 'skipped')
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    secrets: inherit
+    with:
+      environment: ${{ inputs.environment }}
+      app-version: ${{ inputs.app-version }}
+      helm-chart-name: ${{ inputs.helm-chart-name }}
+      release-name: ${{ inputs.release-name }}
+      helm-dir: ${{ inputs.helm-dir }}
+      helm-timeout: ${{ inputs.helm-timeout }}
+      helm-additional-args: ${{ inputs.helm-additional-args }}
+      release-values-yaml: ${{ inputs.release-values-yaml }}
+      show-changelog: true
+      slack-notification: ${{ inputs.slack-notification }}
+      slack-channel: ${{ inputs.slack-channel }}

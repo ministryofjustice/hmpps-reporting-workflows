@@ -4,9 +4,10 @@
 repos pin to a **semver git tag**, never to `@main`. This lets the library
 evolve without silently breaking every consumer on the same day.
 
-Step-level composites live in `hmpps-reporting-actions` and use the same
-tagging rules — workflows that call actions should pin `@v1` there and
-release this repo after the actions tag exists.
+Step-level composites live in `hmpps-reporting-actions`. **This repo** pins
+those composites to a full commit SHA (MoJ policy); consuming apps must not
+call `hmpps-reporting-actions` directly — see Governance below. Release this
+repo after an actions tag exists so the SHA bump can ship behind `@v1`.
 
 ## Tagging convention
 
@@ -73,6 +74,32 @@ Tags are created automatically by [`.github/workflows/release.yml`](../.github/w
 4. Consuming repos pin `@v1` (recommended) or a full tag when freezing.
 
 Bootstrap (no full tags yet): the first run creates `v1.0.0`, `v1.0`, and `v1`.
+
+## Governance: who pins what
+
+MoJ org policy requires **composite actions** to be pinned to a full commit
+SHA. Reusable workflows may use a moving major tag (`@v1`). Keep SHAs out
+of app repos:
+
+| Layer | Owns | Pin style |
+|-------|------|-----------|
+| App stub (`pipeline.yml`, `bump-version.yml`, …) | Triggers + stack inputs | `hmpps-reporting-workflows/...@v1` only |
+| `hmpps-reporting-workflows` | Orchestration + **single** SHA pin of composites | `hmpps-reporting-actions/...@fullsha # vX.Y.Z` |
+| `hmpps-reporting-actions` | Step logic | Released/tags for humans; callers use SHA |
+
+Rules:
+
+1. **Apps never `uses:` `hmpps-reporting-actions/...` directly** — only via
+   workflows (exceptions need justification).
+2. **Apps pin workflows `@v1`** (moving major).
+3. **Workflows pin composites to full SHA** + semver comment; update the SHA
+   in the same PR that consumes a new actions release.
+4. Dependabot on the workflows repo can open PRs for those SHA bumps; apps
+   stay stable until they opt into a new workflows `@v1` (moving tag).
+
+Bump shared libs via
+[`bump_version.yml`](../.github/workflows/bump_version.yml) (`stack: gradle|node`);
+see [`templates/bump-version.yml`](../templates/bump-version.yml).
 
 ## Upgrade process for consumers
 
