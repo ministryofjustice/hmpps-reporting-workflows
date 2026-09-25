@@ -29,4 +29,9 @@ jobs:
     secrets: inherit
     with:
       enable-probation: false
+      # Optional Sentry release secret patch (primary deploys only):
+      # enable-sentry: true
+      # sentry-secret-name: your-app-sentry
+      # Requires existing k8s secret (not managed by Cloud Platform Terraform).
+      # For source maps, set repo/org secret SENTRY_AUTH_TOKEN (secrets: inherit).
       slack-channel: 'dpr_cicd_approvals'

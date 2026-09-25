@@ -47,6 +47,12 @@ on:
         description: Also push the :latest tag (disable on feature/PR builds)
         type: boolean
         default: true
+    secrets:
+      # Optional. When set, mounted as BuildKit secret id=SENTRY_AUTH_TOKEN
+      # for Dockerfiles that upload Sentry source maps (e.g. MI-UI).
+      # Dockerfile should no-op when the secret is empty/absent.
+      SENTRY_AUTH_TOKEN:
+        required: false
     outputs:
       app-version:
         description: The app version tag that was built and pushed
@@ -143,5 +149,9 @@ jobs:
             GIT_REF=${{ github.sha }}
             GIT_BRANCH=${{ github.ref_name }}
             ${{ inputs.additional-docker-build-args }}
+          # BuildKit secret for Sentry source-map upload (CircleCI: --secret id=SENTRY_AUTH_TOKEN).
+          # Empty token is fine — consumer Dockerfiles typically skip upload when unset.
+          secrets: |
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
