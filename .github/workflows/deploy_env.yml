@@ -235,7 +235,7 @@ jobs:
 
       - name: Update Sentry release secret
         if: inputs.enable-sentry
-        uses: ministryofjustice/hmpps-reporting-actions/actions/update-sentry-release-secret@075d10072676eff4070b61bbf394b6fd8271785a  # v1.0.1
+        uses: ministryofjustice/hmpps-reporting-actions/actions/update-sentry-release-secret@b8e762fe93f63c5e7451d5e3b23ee984549dda97  # Sentry configuration
         with:
           secret-name: ${{ inputs.sentry-secret-name }}
           secret-key: ${{ inputs.sentry-secret-key }}
