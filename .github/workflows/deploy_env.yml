@@ -15,7 +15,13 @@ name: Deploy to Environment
 #       - show changelog (optional)
 #       - run: helm upgrade/install via deploy_env.sh
 #       - slack/notify (if slack_notification: true)
-#       - jira/notify  (if jira_update: true)
+#       - jira/notify  (if jira_update: true) — intentionally NOT ported
+#
+# Jira: since orb v8, jira/notify needs pipeline_id/pipeline_number; without
+# them it passes but logs "'pipeline.id' is required" and updates nothing.
+# MI, MI-UI and dpr-tools never passed them, so Jira was not receiving their
+# deployments. If wanted later, this job's `environment:` already creates
+# GitHub Deployments that the GitHub for Jira app can sync.
 #
 # k8s secrets required (auto-populated by Cloud Platform Terraform module):
 #   KUBE_CERT, KUBE_CLUSTER, KUBE_NAMESPACE, KUBE_TOKEN
