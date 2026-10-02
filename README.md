@@ -96,6 +96,15 @@ the same mechanism as CircleCI `hmpps-circleci-orb` / `deploy_env.sh`:
 Without this, Helm only applies literal CIDRs from values files and nginx
 ingress returns **403** for MoJ VPN users (port-forward still works).
 
+### Not carried over from CircleCI
+
+- **Jira deployment updates (`jira_update`)** — since orb v8, `jira/notify`
+  needs `pipeline_id` / `pipeline_number`, otherwise it updates nothing
+  ([release note](https://github.com/ministryofjustice/hmpps-circleci-orb/blob/main/release-notes/8.x.md#800)).
+  MI, MI-UI and dpr-tools never passed them, so this was already a no-op and
+  isn't ported. If needed later, `deploy_env`'s `environment:` creates GitHub
+  Deployments that the GitHub for Jira app can sync.
+
 ## App stub convention
 
 Every consuming app uses the same filenames:
