@@ -96,6 +96,14 @@ on:
         description: Build image and deploy primary + probation DEV on non-main branches
         type: boolean
         default: true
+      deploy-test-on-feature-branches:
+        description: Deploy primary + probation TEST on non-main branches
+        type: boolean
+        default: false
+      deploy-preprod-on-feature-branches:
+        description: Deploy primary + probation PREPROD on non-main branches
+        type: boolean
+        default: false
 
       # ── Optional Sentry (primary deploys only; matches CircleCI MI-UI) ─
       enable-sentry:
@@ -271,7 +279,7 @@ jobs:
 
   deploy_primary_test:
     name: Deploy primary → test
-    if: github.ref == inputs.deploy-ref
+    if: github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches
     needs: [deploy_primary_dev, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
@@ -290,7 +298,7 @@ jobs:
 
   deploy_primary_preprod:
     name: Deploy primary → preprod
-    if: github.ref == inputs.deploy-ref
+    if: github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches
     needs: [deploy_primary_dev, app_version]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
@@ -352,7 +360,7 @@ jobs:
     name: Deploy probation → probation-test
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches) &&
       inputs.enable-probation &&
       needs.deploy_probation_dev.result == 'success' &&
       needs.helm_lint_probation_test.result == 'success' &&
@@ -373,7 +381,7 @@ jobs:
     name: Deploy probation → probation-preprod
     if: |
       always() &&
-      github.ref == inputs.deploy-ref &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches) &&
       inputs.enable-probation &&
       needs.deploy_probation_dev.result == 'success' &&
       needs.helm_lint_probation_preprod.result == 'success' &&
