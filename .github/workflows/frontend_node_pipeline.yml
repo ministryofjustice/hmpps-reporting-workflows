@@ -105,6 +105,14 @@ on:
         type: boolean
         default: false
 
+      # ── Release tag (deploy-ref only) ────────────────────────────────
+      enable-release-tag:
+        description: >-
+          Tag each deploy-ref build vX.Y.Z (patch bump) and push the image with
+          that tag too. Caller must grant `contents: write`.
+        type: boolean
+        default: false
+
       # ── Optional Sentry (primary deploys only; matches CircleCI MI-UI) ─
       enable-sentry:
         description: Patch Sentry RELEASE_GIT_SHA secret before primary Helm deploys
@@ -218,17 +226,19 @@ jobs:
       chart-name: ${{ inputs.probation-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
-  build_docker:
-    name: Build multi-arch Docker image
+  # Same validate/lint gate as build_docker; tag is pushed before the image
+  # build so both image tags (Build.<sha>, vX.Y.Z) land in one push.
+  release_tag:
+    name: Create release tag
     if: |
       always() &&
-      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
+      inputs.enable-release-tag &&
+      github.ref == inputs.deploy-ref &&
       needs.node_validate.result == 'success' &&
       needs.helm_lint_primary_dev.result == 'success' &&
       needs.helm_lint_primary_test.result == 'success' &&
       needs.helm_lint_primary_preprod.result == 'success' &&
       needs.helm_lint_primary_prod.result == 'success' &&
-      needs.app_version.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_dev.result) &&
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_test.result) &&
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_preprod.result) &&
@@ -243,7 +253,38 @@ jobs:
       - helm_lint_probation_test
       - helm_lint_probation_preprod
       - helm_lint_probation_prod
+    permissions:
+      contents: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/release_tag.yml@v1
+
+  build_docker:
+    name: Build multi-arch Docker image
+    if: |
+      always() &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
+      needs.node_validate.result == 'success' &&
+      needs.helm_lint_primary_dev.result == 'success' &&
+      needs.helm_lint_primary_test.result == 'success' &&
+      needs.helm_lint_primary_preprod.result == 'success' &&
+      needs.helm_lint_primary_prod.result == 'success' &&
+      needs.app_version.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_dev.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_test.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_preprod.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_prod.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.release_tag.result)
+    needs:
+      - node_validate
+      - helm_lint_primary_dev
+      - helm_lint_primary_test
+      - helm_lint_primary_preprod
+      - helm_lint_primary_prod
+      - helm_lint_probation_dev
+      - helm_lint_probation_test
+      - helm_lint_probation_preprod
+      - helm_lint_probation_prod
       - app_version
+      - release_tag
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@v1
     secrets: inherit
     with:
@@ -253,6 +294,7 @@ jobs:
       additional-docker-build-args: ${{ inputs.additional-docker-build-args }}
       push: true
       tag-latest: ${{ github.ref == inputs.deploy-ref }}
+      extra-tags: ${{ needs.release_tag.outputs.tag }}
 
   deploy_primary_dev:
     name: Deploy primary → dev

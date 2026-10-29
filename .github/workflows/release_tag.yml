@@ -1,0 +1,99 @@
+name: Release tag
+
+# Creates the app release tag (vX.Y.Z) on the commit being built, so a
+# release can later be pinned by tag (image :vX.Y.Z + chart/values at the tag)
+# instead of by Build.<sha>.
+#
+# Patch-bumps the highest existing <prefix>X.Y.Z tag (initial-version when
+# none). App tags are independent of the Lib-v* tags created by bump_version,
+# which mirror the shared library version.
+#
+# Caller must grant `contents: write` (tag push uses GITHUB_TOKEN). Tags pushed
+# with GITHUB_TOKEN do not trigger further workflow runs.
+
+on:
+  workflow_call:
+    inputs:
+      tag-prefix:
+        description: Prefix for app release tags
+        type: string
+        default: 'v'
+      initial-version:
+        description: Version used when no prefixed X.Y.Z tag exists yet
+        type: string
+        default: '1.0.0'
+    outputs:
+      tag:
+        description: The release tag on this commit (e.g. v1.0.3)
+        value: ${{ jobs.tag.outputs.tag }}
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Create release tag
+    runs-on: ubuntu-latest
+    # No `concurrency:` here: GitHub cancels older *pending* runs in a group,
+    # which would drop a main build's tag. Racing builds are handled by the
+    # retry loop instead (pushing an existing tag name is rejected).
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compute and push tag
+        id: tag
+        env:
+          PREFIX: ${{ inputs.tag-prefix }}
+          INITIAL: ${{ inputs.initial-version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          GLOB="${PREFIX}[0-9]*.[0-9]*.[0-9]*"
+          STRICT="^${PREFIX}[0-9]+\.[0-9]+\.[0-9]+$"
+          TAG=""
+
+          for attempt in 1 2 3 4 5; do
+            git fetch --force --tags --quiet origin
+
+            # Re-run of the same commit: reuse its existing tag.
+            EXISTING=$(git tag --points-at HEAD -l "${GLOB}" --sort=-v:refname | grep -E "${STRICT}" | head -n1 || true)
+            if [ -n "${EXISTING}" ]; then
+              TAG="${EXISTING}"
+              echo "Commit already tagged: ${TAG}"
+              break
+            fi
+
+            LATEST=$(git tag -l "${GLOB}" --sort=-v:refname | grep -E "${STRICT}" | head -n1 || true)
+            if [ -z "${LATEST}" ]; then
+              CANDIDATE="${PREFIX}${INITIAL}"
+            else
+              IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#"${PREFIX}"}"
+              CANDIDATE="${PREFIX}${MAJOR}.${MINOR}.$((PATCH + 1))"
+            fi
+
+            echo "Latest: ${LATEST:-none} -> candidate: ${CANDIDATE} (attempt ${attempt})"
+            git tag -a "${CANDIDATE}" -m "Release ${CANDIDATE}" HEAD
+            if git push origin "refs/tags/${CANDIDATE}"; then
+              TAG="${CANDIDATE}"
+              break
+            fi
+
+            git tag -d "${CANDIDATE}"
+            sleep $((attempt * 3))
+          done
+
+          if [ -z "${TAG}" ]; then
+            echo "::error::Could not create a release tag after 5 attempts"
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "### Release tag: \`${TAG}\` (${GITHUB_SHA})" >> "$GITHUB_STEP_SUMMARY"
