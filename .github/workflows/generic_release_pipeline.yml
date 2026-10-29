@@ -119,14 +119,18 @@ jobs:
             fi
             SHA=$(gh api "repos/${REPO}/commits/${RELEASE_TAG}" --jq .sha)
             echo "Release tag ${RELEASE_TAG} -> ${SHA}"
-            echo "version=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-            echo "checkout_ref=${RELEASE_TAG}" >> "$GITHUB_OUTPUT"
-            echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=${RELEASE_TAG}"
+              echo "checkout_ref=${RELEASE_TAG}"
+              echo "sha=${SHA}"
+            } >> "$GITHUB_OUTPUT"
             echo "### Releasing \`${RELEASE_TAG}\` (${SHA})" >> "$GITHUB_STEP_SUMMARY"
           elif [ -n "${APP_VERSION}" ]; then
-            echo "version=${APP_VERSION}" >> "$GITHUB_OUTPUT"
-            echo "checkout_ref=" >> "$GITHUB_OUTPUT"
-            echo "sha=" >> "$GITHUB_OUTPUT"
+            {
+              echo "version=${APP_VERSION}"
+              echo "checkout_ref="
+              echo "sha="
+            } >> "$GITHUB_OUTPUT"
           else
             echo "::error::Set release-tag (preferred) or app-version"
             exit 1
