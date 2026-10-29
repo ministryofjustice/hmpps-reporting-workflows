@@ -1,7 +1,13 @@
 name: Generic release pipeline
 
-# Helm-only promote of an existing image tag (Build.<sha>).
-# No validate / docker build — for delayed preprod/prod from a releases board.
+# Helm-only promote of an existing build. No validate / docker build — for
+# delayed preprod/prod from a releases board.
+#
+# Preferred: release-tag (vX.Y.Z from release_tag.yml) — deploys image
+# :vX.Y.Z with the Helm chart + values checked out at that tag. The caller is
+# dispatched on main (GitHub Environment branch policies), only the checkout
+# moves to the tag.
+# Legacy: app-version (Build.<sha>) — chart/values from the dispatched ref.
 #
 # App stubs (e.g. MI-UI .github/workflows/release.yml) call this via
 # workflow_call. digital-prison-reporting-releases dispatches those stubs.
@@ -14,10 +20,14 @@ on:
         description: GitHub Environment name (dev|test|preprod|prod|…)
         type: string
         required: true
-      app-version:
-        description: Existing image tag to deploy (e.g. Build.<sha>)
+      release-tag:
+        description: App release tag to deploy (e.g. v1.0.3); image and chart both come from it
         type: string
-        required: true
+        default: ''
+      app-version:
+        description: Existing image tag (e.g. Build.<sha>); ignored when release-tag is set
+        type: string
+        default: ''
       helm-chart-name:
         type: string
         default: ''
@@ -53,6 +63,16 @@ on:
       slack-channel:
         type: string
         default: 'dpr_cicd_approvals'
+      # Sentry: same secret patch as the main pipeline's primary deploys.
+      enable-sentry:
+        type: boolean
+        default: false
+      sentry-secret-name:
+        type: string
+        default: ''
+      sentry-secret-key:
+        type: string
+        default: 'RELEASE_GIT_SHA'
 
     secrets:
       KUBE_CERT:
@@ -75,15 +95,57 @@ permissions:
   packages: read
 
 jobs:
+  verify_tag:
+    name: Resolve release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      checkout-ref: ${{ steps.resolve.outputs.checkout_ref }}
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve and verify
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release-tag }}
+          APP_VERSION: ${{ inputs.app-version }}
+        run: |
+          set -euo pipefail
+          if [ -n "${RELEASE_TAG}" ]; then
+            if ! gh api "repos/${REPO}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+              echo "::error::Git tag not found in ${REPO}: ${RELEASE_TAG}"
+              exit 1
+            fi
+            SHA=$(gh api "repos/${REPO}/commits/${RELEASE_TAG}" --jq .sha)
+            echo "Release tag ${RELEASE_TAG} -> ${SHA}"
+            {
+              echo "version=${RELEASE_TAG}"
+              echo "checkout_ref=${RELEASE_TAG}"
+              echo "sha=${SHA}"
+            } >> "$GITHUB_OUTPUT"
+            echo "### Releasing \`${RELEASE_TAG}\` (${SHA})" >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "${APP_VERSION}" ]; then
+            {
+              echo "version=${APP_VERSION}"
+              echo "checkout_ref="
+              echo "sha="
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Set release-tag (preferred) or app-version"
+            exit 1
+          fi
+
   verify_image:
     name: Verify image exists
+    needs: [verify_tag]
     if: inputs.verify-image
     runs-on: ubuntu-latest
     steps:
       - name: Check GHCR tag
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE: ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:${{ inputs.app-version }}
+          IMAGE: ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}:${{ needs.verify_tag.outputs.version }}
         run: |
           set -euo pipefail
           echo "Checking image: ${IMAGE}"
@@ -97,15 +159,17 @@ jobs:
 
   deploy:
     name: Deploy ${{ inputs.environment }}
-    needs: [verify_image]
+    needs: [verify_tag, verify_image]
     if: |
       always() &&
+      needs.verify_tag.result == 'success' &&
       (needs.verify_image.result == 'success' || needs.verify_image.result == 'skipped')
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
     secrets: inherit
     with:
       environment: ${{ inputs.environment }}
-      app-version: ${{ inputs.app-version }}
+      app-version: ${{ needs.verify_tag.outputs.version }}
+      checkout-ref: ${{ needs.verify_tag.outputs.checkout-ref }}
       helm-chart-name: ${{ inputs.helm-chart-name }}
       release-name: ${{ inputs.release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -115,3 +179,8 @@ jobs:
       show-changelog: true
       slack-notification: ${{ inputs.slack-notification }}
       slack-channel: ${{ inputs.slack-channel }}
+      enable-sentry: ${{ inputs.enable-sentry }}
+      sentry-secret-name: ${{ inputs.sentry-secret-name }}
+      sentry-secret-key: ${{ inputs.sentry-secret-key }}
+      # Empty for Build.<sha> releases: deploy_env derives it from app-version.
+      sentry-release-sha: ${{ needs.verify_tag.outputs.sha }}
