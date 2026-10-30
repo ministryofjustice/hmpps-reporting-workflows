@@ -164,7 +164,7 @@ jobs:
       always() &&
       needs.verify_tag.result == 'success' &&
       (needs.verify_image.result == 'success' || needs.verify_image.result == 'skipped')
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.environment }}
