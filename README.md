@@ -25,7 +25,8 @@ Use **workflow_dispatch** for minor/major bumps.
   - `frontend_node_pipeline.yml` — Node build/deploy (primary + optional probation)
   - `pr_checks.yml` — PR checks (`stack: gradle|node`)
   - `bump_version.yml` — bump shared lib (`stack: gradle|node`); SHA pins live here
-  - `generic_release_pipeline.yml` — helm-only promote of existing `Build.<sha>` (no rebuild)
+  - `generic_release_pipeline.yml` — helm-only promote of an app release tag `vX.Y.Z` (or legacy `Build.<sha>`), no rebuild
+  - `release_tag.yml` — creates the app release tag `vX.Y.Z` on main builds
   - `gradle_validate.yml`, `node_validate.yml`, `helm_lint.yml`,
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
@@ -54,6 +55,28 @@ with:
 
 Other Java/Node apps leave `enable-probation` false (default). Future products
 should be further **named** presets (e.g. activities), not numbered flags.
+
+### Tag-based releases (Node pipeline, opt-in)
+
+With `enable-release-tag: true` (caller grants `contents: write`), every
+`main` build:
+
+1. creates app release tag `vX.Y.Z` on the commit (patch bump of the latest
+   `v*` tag, starting at `v1.0.0`), and
+2. pushes the image as both `:Build.<sha>` and `:vX.Y.Z`.
+
+A release then pins only the tag. The app's `release.yml`
+([template](templates/release-app.yml)) is dispatched **on `main`** with
+`release-tag: vX.Y.Z`; `generic_release_pipeline` verifies the git tag and
+image, and `deploy_env` checks out the tag, so image, Helm chart and
+`values-<env>.yaml` all come from the same commit. Dispatching on `main`
+(not on the tag) is required because Cloud Platform GitHub Environments only
+allow branch patterns.
+
+App tags (`v*`) are separate from `Lib-v*` tags, which `bump_version` creates
+to mirror the shared library version on its bump branch. See
+[`digital-prison-reporting-releases`](https://github.com/ministryofjustice/digital-prison-reporting-releases)
+for the releases board.
 
 ### Optional Sentry (primary deploys)
 

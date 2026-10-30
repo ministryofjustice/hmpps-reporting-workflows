@@ -29,6 +29,10 @@ jobs:
     secrets: inherit
     with:
       enable-probation: false
+      # Optional app release tags (vX.Y.Z on each main build, image tagged too)
+      # for tag-based releases via release.yml. Also set `contents: write`
+      # in permissions above:
+      # enable-release-tag: true
       # Optional Sentry release secret patch (primary deploys only):
       # enable-sentry: true
       # sentry-secret-name: your-app-sentry

@@ -152,7 +152,7 @@ jobs:
 
   gradle_validate:
     name: Gradle validate
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/gradle_validate.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/gradle_validate.yml@test/tag-based-releases
     secrets: inherit
     with:
       java-version: ${{ inputs.java-version }}
@@ -163,7 +163,7 @@ jobs:
 
   helm_lint_primary:
     name: Helm lint primary (dev)
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@test/tag-based-releases
     with:
       environment: ${{ inputs.primary-dev-env }}
       chart-name: ${{ inputs.primary-chart-name }}
@@ -172,7 +172,7 @@ jobs:
   helm_lint_probation_dev:
     name: Helm lint probation (dev)
     if: inputs.enable-probation
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@test/tag-based-releases
     with:
       environment: ${{ inputs.probation-dev-env }}
       chart-name: ${{ inputs.probation-chart-name }}
@@ -181,7 +181,7 @@ jobs:
   helm_lint_probation_test:
     name: Helm lint probation (test)
     if: inputs.enable-probation
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@test/tag-based-releases
     with:
       environment: ${{ inputs.probation-test-env }}
       chart-name: ${{ inputs.probation-chart-name }}
@@ -190,7 +190,7 @@ jobs:
   helm_lint_probation_preprod:
     name: Helm lint probation (preprod)
     if: inputs.enable-probation
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@test/tag-based-releases
     with:
       environment: ${{ inputs.probation-preprod-env }}
       chart-name: ${{ inputs.probation-chart-name }}
@@ -199,7 +199,7 @@ jobs:
   helm_lint_probation_prod:
     name: Helm lint probation (prod)
     if: inputs.enable-probation
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/helm_lint.yml@test/tag-based-releases
     with:
       environment: ${{ inputs.probation-prod-env }}
       chart-name: ${{ inputs.probation-chart-name }}
@@ -227,7 +227,7 @@ jobs:
       - helm_lint_probation_preprod
       - helm_lint_probation_prod
       - app_version
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@test/tag-based-releases
     secrets: inherit
     with:
       dockerfile-dir: ${{ inputs.dockerfile-dir }}
@@ -246,7 +246,7 @@ jobs:
       needs.build_docker.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [build_docker, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-dev-env }}
@@ -265,7 +265,7 @@ jobs:
     name: Deploy primary → test
     if: github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches
     needs: [deploy_primary_dev, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-test-env }}
@@ -284,7 +284,7 @@ jobs:
     name: Deploy primary → preprod
     if: github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches
     needs: [deploy_primary_dev, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-preprod-env }}
@@ -303,7 +303,7 @@ jobs:
     name: Deploy primary → prod
     if: github.ref == inputs.deploy-ref
     needs: [deploy_primary_preprod, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-prod-env }}
@@ -331,7 +331,7 @@ jobs:
       needs.helm_lint_probation_dev.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [build_docker, helm_lint_probation_dev, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-dev-env }}
@@ -352,7 +352,7 @@ jobs:
       needs.helm_lint_probation_test.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [deploy_probation_dev, helm_lint_probation_test, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-test-env }}
@@ -373,7 +373,7 @@ jobs:
       needs.helm_lint_probation_preprod.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [deploy_probation_dev, helm_lint_probation_preprod, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-preprod-env }}
@@ -394,7 +394,7 @@ jobs:
       needs.helm_lint_probation_prod.result == 'success' &&
       needs.app_version.result == 'success'
     needs: [deploy_probation_preprod, helm_lint_probation_prod, app_version]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@v1
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-prod-env }}

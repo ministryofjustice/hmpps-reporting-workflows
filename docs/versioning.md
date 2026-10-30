@@ -22,6 +22,21 @@ repo after an actions tag exists so the SHA bump can ship behind `@v1`.
 - Recommended default for consumers: pin to the major tag (`@v1`), not a
   full version and never `@main`.
 
+## App release tags (consumer repos)
+
+Separate from this library's tags. Apps that set `enable-release-tag: true`
+get a `vX.Y.Z` tag on every `main` build (`release_tag.yml`): patch bump of
+the highest strict `vX.Y.Z` tag, `v1.0.0` when none exists, re-runs reuse the
+commit's existing tag. Minor/major bumps are manual: tag a `main` commit
+(`git tag -a v1.1.0 -m v1.1.0 <sha> && git push origin v1.1.0`), then re-run
+that commit's pipeline so the image is also pushed as `:v1.1.0` (the tag job
+reuses an existing tag). Later builds patch-bump from it.
+
+| Tag | Created by | Points at | Used for |
+|-----|-----------|-----------|----------|
+| `vX.Y.Z` | `release_tag.yml` on main builds | the built `main` commit (image `:vX.Y.Z`) | releases board / `release.yml` |
+| `Lib-vX.Y.Z` | `bump_version.yml` | the lib-bump branch commit | tracking shared library bumps only |
+
 ## What counts as a breaking change
 
 A change to `hmpps-reporting-workflows` requires a **major** version bump
