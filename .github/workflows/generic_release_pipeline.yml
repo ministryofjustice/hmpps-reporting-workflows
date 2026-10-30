@@ -73,22 +73,9 @@ on:
       sentry-secret-key:
         type: string
         default: 'RELEASE_GIT_SHA'
-
-    secrets:
-      KUBE_CERT:
-        required: true
-      KUBE_CLUSTER:
-        required: true
-      KUBE_NAMESPACE:
-        required: true
-      KUBE_TOKEN:
-        required: true
-      HMPPS_SRE_SLACK_BOT_TOKEN:
-        required: false
-      # Optional fallback token for reading hmpps-ip-allowlists; the allowlist
-      # normally comes from org var HMPPS_IP_ALLOWLIST_GROUPS_YAML_GZ.
-      IP_ALLOWLISTS_GITHUB_TOKEN:
-        required: false
+    # No `secrets:` block: KUBE_* are GitHub Environment secrets, only visible
+    # to deploy_env's job (which sets `environment:`). Declaring them required
+    # here fails the caller before any job runs. Callers use `secrets: inherit`.
 
 permissions:
   contents: read
