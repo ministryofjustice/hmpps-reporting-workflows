@@ -23,3 +23,6 @@ jobs:
       stack: gradle
       java-version: '21'
       java-distribution: 'corretto'
+      # Require Conventional Commit PR titles ("feat(scope): …"); with squash
+      # merges the title drives the release version bump:
+      # require-conventional-title: true

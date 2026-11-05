@@ -25,7 +25,10 @@ Use **workflow_dispatch** for minor/major bumps.
   - `frontend_node_pipeline.yml` — Node build/deploy (primary + optional probation)
   - `pr_checks.yml` — PR checks (`stack: gradle|node`)
   - `bump_version.yml` — bump shared lib (`stack: gradle|node`); SHA pins live here
-  - `generic_release_pipeline.yml` — helm-only promote of existing `Build.<sha>` (no rebuild)
+  - `generic_release_pipeline.yml` — helm-only promote of an app release tag `vX.Y.Z` (or legacy `Build.<sha>`), no rebuild
+  - `release_tag.yml` — creates the app release tag `vX.Y.Z` on main builds
+  - `github_release.yml` — publishes the GitHub Release (generated notes) for a stable tag
+  - `prune_images.yml` — scheduled clean-up of old feature-build images in GHCR
   - `gradle_validate.yml`, `node_validate.yml`, `helm_lint.yml`,
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
@@ -54,6 +57,78 @@ with:
 
 Other Java/Node apps leave `enable-probation` false (default). Future products
 should be further **named** presets (e.g. activities), not numbered flags.
+
+### Tag-based releases (Node and Java pipelines, opt-in)
+
+With `enable-release-tag: true` (caller grants `contents: write`):
+
+| Build | Git tag | Image tags | GitHub Release | Deploys |
+|-------|---------|------------|----------------|---------|
+| `main` (deploy-ref) | `vX.Y.Z` (patch bump, starts `v1.0.0`) | `Build.<sha>`, `vX.Y.Z`, `latest` | yes, notes generated, after the image is pushed | dev/test (+ preprod/prod only if `deploy-preprod-prod: true`) |
+| feature branch | none | `Build.<sha>`, `rc-<branch>-<run>` | no | dev/test (per `deploy-*-on-feature-branches`) |
+
+Deploys use the stable tag or RC label as the image tag (same image as
+`Build.<sha>`); chart and values come from the commit being built.
+
+**Version bumps (Conventional Commits).** The next stable version is worked
+out from the commits merged since the previous stable tag
+(`version-bump-strategy: conventional`, the default):
+
+| Commit / PR title (squash merge) | Bump | Example |
+|----------------------------------|------|---------|
+| `fix: …`, `chore: …`, `docs: …`, `deps: …`, or anything else | patch | `v1.4.2` -> `v1.4.3` |
+| `feat: …` / `feat(scope): …` | minor | `v1.4.2` -> `v1.5.0` |
+| `feat!: …` / `fix(api)!: …`, or a `BREAKING CHANGE:` footer | major | `v1.4.2` -> `v2.0.0` |
+
+The highest bump wins when several commits are merged. Unprefixed commits
+fall back to patch, so nothing blocks a release. To keep it reliable:
+
+- squash-merge PRs with the **PR title** as the commit message (repo
+  settings), so one PR is one Conventional Commit on `main`;
+- turn on the PR title check in `pull-request.yml`:
+
+  ```yaml
+  uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/pr_checks.yml@v1
+  with:
+    require-conventional-title: true   # fails PRs whose title isn't "type(scope)!: summary"
+  ```
+
+  Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `perf`, `test`,
+  `build`, `ci`, `style`, `revert`, `deps`. The check's summary shows the
+  bump the PR will cause.
+
+`version-bump-strategy: patch` keeps always-patch. For a one-off override,
+tag the `main` commit by hand and re-run its pipeline (see
+[`docs/versioning.md`](docs/versioning.md#app-release-tags-consumer-repos)).
+
+**Stable-only promotion.** Set `deploy-preprod-prod: false` so preprod/prod
+are reached only through the releases repo. A release pins only the tag. The
+app's `release.yml` ([template](templates/release-app.yml)) is dispatched
+**on `main`** with `release-tag: vX.Y.Z`; `generic_release_pipeline`:
+
+- for protected environments (anything not in `unprotected-environments`,
+  default `dev test probation-dev probation-test`) requires a strict
+  `vX.Y.Z` with a **published, non-prerelease GitHub Release**;
+- verifies the git tag and image, and `deploy_env` checks out the tag, so
+  image, Helm chart and `values-<env>.yaml` all come from the same commit.
+
+Dispatching on `main` (not on the tag) is required because Cloud Platform
+GitHub Environments only allow branch patterns.
+
+**Rollback.** Preprod/prod: a release PR switching `tag:` to an older stable
+version. Dev/test: run `release.yml` with an older `release-tag`, or with
+`app-version: rc-…` + `checkout-ref: <sha>` for an earlier feature build
+(`helm rollback` for emergencies). Dev/test rollbacks last until the next build.
+
+**Image clean-up.** GHCR has no retention policy; call `prune_images.yml` on
+a schedule. It deletes only versions older than N days whose tags are all
+`Build.*`/`rc-*`, never `vX.Y.Z`/`latest` or untagged (multi-arch) manifests.
+Defaults to dry-run; the repo's Actions access on the package needs Admin.
+
+App tags (`v*`) are separate from `Lib-v*` tags, which `bump_version` creates
+to mirror the shared library version on its bump branch. See
+[`digital-prison-reporting-releases`](https://github.com/ministryofjustice/digital-prison-reporting-releases)
+for the releases board.
 
 ### Optional Sentry (primary deploys)
 
