@@ -34,8 +34,13 @@ reuses an existing tag). Later builds patch-bump from it.
 
 | Tag | Created by | Points at | Used for |
 |-----|-----------|-----------|----------|
-| `vX.Y.Z` | `release_tag.yml` on main builds | the built `main` commit (image `:vX.Y.Z`) | releases board / `release.yml` |
+| `vX.Y.Z` (+ GitHub Release) | `release_tag.yml` / `github_release.yml` on main builds | the built `main` commit (image `:vX.Y.Z`) | releases board / `release.yml`; the only tags preprod/prod accept |
+| `rc-<branch>-<run>` | feature builds (image tag only, no git tag) | the feature commit's image | dev/test deploys, dev/test rollback |
 | `Lib-vX.Y.Z` | `bump_version.yml` | the lib-bump branch commit | tracking shared library bumps only |
+
+Recommended repo settings for apps using this: a tag ruleset on
+`refs/tags/v*` blocking update/delete (stable tags immutable), and "require
+branches to be up to date before merging" on `main`.
 
 ## What counts as a breaking change
 

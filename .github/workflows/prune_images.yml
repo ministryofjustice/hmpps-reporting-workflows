@@ -1,0 +1,84 @@
+name: Prune images
+
+# Deletes old feature-build image versions from the app's GHCR package.
+# GHCR has no built-in retention, and every feature push pushes Build.<sha>
+# (+ an rc-* label).
+#
+# A version is deleted only if ALL of:
+#   - it is older than `older-than-days`
+#   - it has at least one tag, and every tag matches `delete-tag-pattern`
+#   - none of its tags match `keep-tag-pattern` (stable vX.Y.Z, latest)
+# Untagged versions are never touched: multi-arch images keep their platform
+# manifests as untagged versions, deleting them would break kept images.
+#
+# The calling repo's GITHUB_TOKEN needs admin on the package
+# (package settings -> Manage Actions access -> role: Admin) to delete.
+# Caller grants `packages: write`. Defaults to dry-run.
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        description: GHCR package name (default = repository name)
+        type: string
+        default: ''
+      older-than-days:
+        type: number
+        default: 30
+      delete-tag-pattern:
+        description: Regex every tag must match for the version to be deleted
+        type: string
+        default: '^(Build\.|rc-)'
+      keep-tag-pattern:
+        description: Regex; any matching tag protects the version
+        type: string
+        default: '^(v[0-9]+\.[0-9]+\.[0-9]+|latest)$'
+      dry-run:
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+
+jobs:
+  prune:
+    name: Prune feature-build images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Select and delete versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORG: ${{ github.repository_owner }}
+          PACKAGE: ${{ inputs.package-name || github.event.repository.name }}
+          DAYS: ${{ inputs.older-than-days }}
+          DELETE_RE: ${{ inputs.delete-tag-pattern }}
+          KEEP_RE: ${{ inputs.keep-tag-pattern }}
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          set -euo pipefail
+          CUTOFF=$(date -u -d "-${DAYS} days" +%Y-%m-%dT%H:%M:%SZ)
+          echo "Package ${ORG}/${PACKAGE}: deleting versions created before ${CUTOFF} (dry-run=${DRY_RUN})"
+
+          gh api --paginate "orgs/${ORG}/packages/container/${PACKAGE}/versions?per_page=100" \
+            | jq -s --arg cutoff "${CUTOFF}" --arg del "${DELETE_RE}" --arg keep "${KEEP_RE}" '
+                add
+                | map(select(
+                    .created_at < $cutoff
+                    and (.metadata.container.tags | length) > 0
+                    and (.metadata.container.tags | all(test($del)))
+                    and (.metadata.container.tags | any(test($keep)) | not)
+                  ))
+                | .[] | "\(.id) \(.metadata.container.tags | join(","))"' -r > candidates.txt
+
+          COUNT=$(wc -l < candidates.txt | tr -d ' ')
+          echo "### Prune ${PACKAGE}: ${COUNT} version(s) older than ${DAYS} days (dry-run=${DRY_RUN})" >> "$GITHUB_STEP_SUMMARY"
+
+          while read -r ID TAGS; do
+            [ -z "${ID}" ] && continue
+            if [ "${DRY_RUN}" = "true" ]; then
+              echo "would delete ${ID} (${TAGS})"
+            else
+              gh api -X DELETE "orgs/${ORG}/packages/container/${PACKAGE}/versions/${ID}"
+              echo "deleted ${ID} (${TAGS})"
+            fi
+          done < candidates.txt

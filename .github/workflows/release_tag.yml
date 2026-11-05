@@ -26,6 +26,9 @@ on:
       tag:
         description: The release tag on this commit (e.g. v1.0.3)
         value: ${{ jobs.tag.outputs.tag }}
+      previous-stable:
+        description: The stable tag before this one (empty for the first release)
+        value: ${{ jobs.tag.outputs.previous-stable }}
 
 permissions:
   contents: write
@@ -39,6 +42,7 @@ jobs:
     # retry loop instead (pushing an existing tag name is rejected).
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
+      previous-stable: ${{ steps.tag.outputs.previous_stable }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -95,5 +99,12 @@ jobs:
             exit 1
           fi
 
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "### Release tag: \`${TAG}\` (${GITHUB_SHA})" >> "$GITHUB_STEP_SUMMARY"
+          # Next-lower strict tag, used as the release-notes start point.
+          PREVIOUS=$(git tag -l "${GLOB}" --sort=-v:refname | grep -E "${STRICT}" \
+            | awk -v t="${TAG}" 'found { print; exit } $0 == t { found = 1 }' || true)
+
+          {
+            echo "tag=${TAG}"
+            echo "previous_stable=${PREVIOUS}"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Release tag: \`${TAG}\` (${GITHUB_SHA}), previous: \`${PREVIOUS:-none}\`" >> "$GITHUB_STEP_SUMMARY"

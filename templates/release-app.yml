@@ -4,9 +4,13 @@
 # Copy into the consuming repo as:
 #   .github/workflows/release.yml
 #
-# Dispatched on main by digital-prison-reporting-releases (or manually).
-# Deploys image :vX.Y.Z with the Helm chart + values checked out at that tag.
-# Tags come from the pipeline (enable-release-tag: true).
+# Dispatched on main by the releases repo (or manually). Deploys image :vX.Y.Z
+# with the Helm chart + values checked out at that tag. Tags and GitHub
+# Releases come from the pipeline (enable-release-tag: true).
+#
+# preprod/prod: release-tag only, and it must have a published, non-prerelease
+# GitHub Release. dev/test may also use app-version (Build.<sha> / rc-* label)
+# + checkout-ref (commit SHA), e.g. to roll back to an earlier feature build.
 # ============================================================================
 
 name: Release
@@ -18,15 +22,36 @@ on:
         description: Target environment (must match a GitHub Environment)
         type: choice
         options:
+          - dev
+          - test
           - preprod
           - prod
-          - test
-          - dev
         required: true
       release-tag:
-        description: App release tag (e.g. v1.0.3)
+        description: Stable app release tag (e.g. v1.0.3)
         type: string
-        required: true
+        required: false
+        default: ''
+      app-version:
+        description: dev/test only, instead of release-tag (Build.<sha> or rc-* label)
+        type: string
+        required: false
+        default: ''
+      checkout-ref:
+        description: dev/test only, with app-version (commit SHA for chart + values)
+        type: string
+        required: false
+        default: ''
+      helm-chart-name:
+        description: Chart to deploy (default = repo name)
+        type: string
+        required: false
+        default: ''
+      release-name:
+        description: Helm release name (default = chart name)
+        type: string
+        required: false
+        default: ''
       release-values-yaml:
         description: Optional extra Helm values YAML (from releases config/)
         type: string
@@ -50,6 +75,10 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       release-tag: ${{ inputs.release-tag }}
+      app-version: ${{ inputs.app-version }}
+      checkout-ref: ${{ inputs.checkout-ref }}
+      helm-chart-name: ${{ inputs.helm-chart-name }}
+      release-name: ${{ inputs.release-name }}
       release-values-yaml: ${{ inputs.release-values-yaml }}
       verify-image: ${{ inputs.verify-image }}
       slack-channel: 'dpr_cicd_approvals'

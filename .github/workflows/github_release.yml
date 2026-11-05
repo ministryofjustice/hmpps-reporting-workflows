@@ -1,0 +1,57 @@
+name: GitHub Release
+
+# Publishes the GitHub Release for a stable app tag (vX.Y.Z), with notes
+# generated from merged PRs since the previous stable tag.
+#
+# Called after the image is pushed, so a Release only exists for versions that
+# can actually be deployed. The releases repo and generic_release_pipeline only
+# promote tags that have a published (non-draft, non-prerelease) Release.
+#
+# Caller must grant `contents: write`. Re-runs are no-ops if the Release exists.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Stable tag to publish (e.g. v1.0.3)
+        type: string
+        required: true
+      previous-stable:
+        description: Previous stable tag, start point for generated notes (empty = all history)
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          PREVIOUS: ${{ inputs.previous-stable }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Refusing to publish a Release for non-stable tag '${TAG}'"
+            exit 1
+          fi
+
+          if gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "Release ${TAG} already exists, nothing to do."
+          else
+            ARGS=(release create "${TAG}" --repo "${REPO}" --verify-tag
+              --title "${TAG}" --generate-notes --latest)
+            if [ -n "${PREVIOUS}" ]; then
+              ARGS+=(--notes-start-tag "${PREVIOUS}")
+            fi
+            gh "${ARGS[@]}"
+          fi
+
+          URL=$(gh release view "${TAG}" --repo "${REPO}" --json url --jq .url)
+          echo "### Release: [${TAG}](${URL})" >> "$GITHUB_STEP_SUMMARY"

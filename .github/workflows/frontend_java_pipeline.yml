@@ -115,6 +115,21 @@ on:
         description: Deploy primary + probation PREPROD on non-main branches
         type: boolean
         default: false
+      deploy-preprod-prod:
+        description: >-
+          Run the pipeline's preprod/prod deploy jobs. Set false when preprod/prod
+          are released only via the releases repo (stable GitHub Releases).
+        type: boolean
+        default: true
+
+      # ── Release tag / GitHub Release ─────────────────────────────────
+      enable-release-tag:
+        description: >-
+          deploy-ref builds: git tag vX.Y.Z (patch bump), image :vX.Y.Z and a
+          GitHub Release with notes. Other branches: image-only RC label
+          rc-<branch>-<run> (no git tag). Caller must grant `contents: write`.
+        type: boolean
+        default: false
 
       # ── Optional Sentry (primary deploys only; default off) ───────────
       enable-sentry:
@@ -146,9 +161,27 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.set.outputs.version }}
+      rc-label: ${{ steps.set.outputs.rc_label }}
     steps:
       - id: set
-        run: echo "version=Build.${{ github.sha }}" >> "$GITHUB_OUTPUT"
+        env:
+          BRANCH: ${{ github.ref_name }}
+          IS_DEPLOY_REF: ${{ github.ref == inputs.deploy-ref }}
+          ENABLE_RELEASE_TAG: ${{ inputs.enable-release-tag }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          RC_LABEL=""
+          # Feature builds: image-only release-candidate label, no git tag.
+          if [ "${ENABLE_RELEASE_TAG}" = "true" ] && [ "${IS_DEPLOY_REF}" != "true" ]; then
+            SLUG=$(echo "${BRANCH}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-60 | sed -E 's/-+$//')
+            RC_LABEL="rc-${SLUG}-${RUN_NUMBER}"
+          fi
+          {
+            echo "version=Build.${GITHUB_SHA}"
+            echo "rc_label=${RC_LABEL}"
+          } >> "$GITHUB_OUTPUT"
+          echo "### App version: \`Build.${GITHUB_SHA}\`${RC_LABEL:+, RC label: \`${RC_LABEL}\`}" >> "$GITHUB_STEP_SUMMARY"
 
   gradle_validate:
     name: Gradle validate
@@ -205,6 +238,31 @@ jobs:
       chart-name: ${{ inputs.probation-chart-name }}
       helm-dir: ${{ inputs.helm-dir }}
 
+  # Same validate/lint gate as build_docker; tag is pushed before the image
+  # build so both image tags (Build.<sha>, vX.Y.Z) land in one push.
+  release_tag:
+    name: Create release tag
+    if: |
+      !cancelled() &&
+      inputs.enable-release-tag &&
+      github.ref == inputs.deploy-ref &&
+      needs.gradle_validate.result == 'success' &&
+      needs.helm_lint_primary.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_dev.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_test.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_preprod.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_prod.result)
+    needs:
+      - gradle_validate
+      - helm_lint_primary
+      - helm_lint_probation_dev
+      - helm_lint_probation_test
+      - helm_lint_probation_preprod
+      - helm_lint_probation_prod
+    permissions:
+      contents: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/release_tag.yml@test/tag-based-releases
+
   # Probation lint jobs are always listed in needs:; when enable-probation
   # is false they are skipped — treat skipped as OK for the build gate.
   build_docker:
@@ -218,7 +276,8 @@ jobs:
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_dev.result) &&
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_test.result) &&
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_preprod.result) &&
-      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_prod.result)
+      contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_prod.result) &&
+      contains(fromJSON('["success","skipped"]'), needs.release_tag.result)
     needs:
       - gradle_validate
       - helm_lint_primary
@@ -227,6 +286,7 @@ jobs:
       - helm_lint_probation_preprod
       - helm_lint_probation_prod
       - app_version
+      - release_tag
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/docker_build.yml@test/tag-based-releases
     secrets: inherit
     with:
@@ -235,22 +295,44 @@ jobs:
       registry-org: ${{ inputs.registry-org }}
       push: true
       tag-latest: ${{ github.ref == inputs.deploy-ref }}
+      # Stable tag on deploy-ref, image-only RC label elsewhere.
+      extra-tags: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label }}
+
+  # Published only once the image exists, so every Release is deployable.
+  github_release:
+    name: Publish GitHub Release
+    if: |
+      !cancelled() &&
+      needs.release_tag.result == 'success' &&
+      needs.build_docker.result == 'success' &&
+      needs.release_tag.outputs.tag != ''
+    needs: [release_tag, build_docker]
+    permissions:
+      contents: write
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/github_release.yml@test/tag-based-releases
+    with:
+      tag: ${{ needs.release_tag.outputs.tag }}
+      previous-stable: ${{ needs.release_tag.outputs.previous-stable }}
 
   # ── Primary ──────────────────────────────────────────────────────────
+  # app-version: stable tag (deploy-ref) or RC label (feature), else Build.<sha>
+  # (same image). Sentry gets the raw commit SHA explicitly. Conditions use
+  # !cancelled() + explicit upstream results: a plain `if:` implicitly requires
+  # every ancestor to succeed, so skipped optional jobs skipped later deploys.
 
   deploy_primary_dev:
     name: Deploy primary → dev
     if: |
-      always() &&
+      !cancelled() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       needs.build_docker.result == 'success' &&
       needs.app_version.result == 'success'
-    needs: [build_docker, app_version]
+    needs: [build_docker, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-dev-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.primary-chart-name }}
       release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -259,17 +341,20 @@ jobs:
       enable-sentry: ${{ inputs.enable-sentry }}
       sentry-secret-name: ${{ inputs.sentry-secret-name }}
       sentry-secret-key: ${{ inputs.sentry-secret-key }}
-      sentry-release-sha: ${{ inputs.sentry-release-sha }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha || github.sha }}
 
   deploy_primary_test:
     name: Deploy primary → test
-    if: github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches
-    needs: [deploy_primary_dev, app_version]
+    if: |
+      !cancelled() &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches) &&
+      needs.deploy_primary_dev.result == 'success'
+    needs: [deploy_primary_dev, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-test-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.primary-chart-name }}
       release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -278,17 +363,21 @@ jobs:
       enable-sentry: ${{ inputs.enable-sentry }}
       sentry-secret-name: ${{ inputs.sentry-secret-name }}
       sentry-secret-key: ${{ inputs.sentry-secret-key }}
-      sentry-release-sha: ${{ inputs.sentry-release-sha }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha || github.sha }}
 
   deploy_primary_preprod:
     name: Deploy primary → preprod
-    if: github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches
-    needs: [deploy_primary_dev, app_version]
+    if: |
+      !cancelled() &&
+      inputs.deploy-preprod-prod &&
+      (github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches) &&
+      needs.deploy_primary_dev.result == 'success'
+    needs: [deploy_primary_dev, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-preprod-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.primary-chart-name }}
       release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -297,17 +386,21 @@ jobs:
       enable-sentry: ${{ inputs.enable-sentry }}
       sentry-secret-name: ${{ inputs.sentry-secret-name }}
       sentry-secret-key: ${{ inputs.sentry-secret-key }}
-      sentry-release-sha: ${{ inputs.sentry-release-sha }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha || github.sha }}
 
   deploy_primary_prod:
     name: Deploy primary → prod
-    if: github.ref == inputs.deploy-ref
-    needs: [deploy_primary_preprod, app_version]
+    if: |
+      !cancelled() &&
+      inputs.deploy-preprod-prod &&
+      github.ref == inputs.deploy-ref &&
+      needs.deploy_primary_preprod.result == 'success'
+    needs: [deploy_primary_preprod, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.primary-prod-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.primary-chart-name }}
       release-name: ${{ inputs.primary-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -317,25 +410,25 @@ jobs:
       enable-sentry: ${{ inputs.enable-sentry }}
       sentry-secret-name: ${{ inputs.sentry-secret-name }}
       sentry-secret-key: ${{ inputs.sentry-secret-key }}
-      sentry-release-sha: ${{ inputs.sentry-release-sha }}
+      sentry-release-sha: ${{ inputs.sentry-release-sha || github.sha }}
 
   # ── Probation preset (DEV also on feature branches when enabled) ─────
 
   deploy_probation_dev:
     name: Deploy probation → probation-dev
     if: |
-      always() &&
+      !cancelled() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       inputs.enable-probation &&
       needs.build_docker.result == 'success' &&
       needs.helm_lint_probation_dev.result == 'success' &&
       needs.app_version.result == 'success'
-    needs: [build_docker, helm_lint_probation_dev, app_version]
+    needs: [build_docker, helm_lint_probation_dev, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-dev-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.probation-chart-name }}
       release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -345,18 +438,17 @@ jobs:
   deploy_probation_test:
     name: Deploy probation → probation-test
     if: |
-      always() &&
+      !cancelled() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches) &&
       inputs.enable-probation &&
       needs.deploy_probation_dev.result == 'success' &&
-      needs.helm_lint_probation_test.result == 'success' &&
-      needs.app_version.result == 'success'
-    needs: [deploy_probation_dev, helm_lint_probation_test, app_version]
+      needs.helm_lint_probation_test.result == 'success'
+    needs: [deploy_probation_dev, helm_lint_probation_test, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-test-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.probation-chart-name }}
       release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -366,18 +458,18 @@ jobs:
   deploy_probation_preprod:
     name: Deploy probation → probation-preprod
     if: |
-      always() &&
+      !cancelled() &&
+      inputs.deploy-preprod-prod &&
       (github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches) &&
       inputs.enable-probation &&
       needs.deploy_probation_dev.result == 'success' &&
-      needs.helm_lint_probation_preprod.result == 'success' &&
-      needs.app_version.result == 'success'
-    needs: [deploy_probation_dev, helm_lint_probation_preprod, app_version]
+      needs.helm_lint_probation_preprod.result == 'success'
+    needs: [deploy_probation_dev, helm_lint_probation_preprod, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-preprod-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.probation-chart-name }}
       release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
@@ -387,18 +479,18 @@ jobs:
   deploy_probation_prod:
     name: Deploy probation → probation-prod
     if: |
-      always() &&
+      !cancelled() &&
+      inputs.deploy-preprod-prod &&
       github.ref == inputs.deploy-ref &&
       inputs.enable-probation &&
       needs.deploy_probation_preprod.result == 'success' &&
-      needs.helm_lint_probation_prod.result == 'success' &&
-      needs.app_version.result == 'success'
-    needs: [deploy_probation_preprod, helm_lint_probation_prod, app_version]
+      needs.helm_lint_probation_prod.result == 'success'
+    needs: [deploy_probation_preprod, helm_lint_probation_prod, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
       environment: ${{ inputs.probation-prod-env }}
-      app-version: ${{ needs.app_version.outputs.version }}
+      app-version: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label || needs.app_version.outputs.version }}
       helm-chart-name: ${{ inputs.probation-chart-name }}
       release-name: ${{ inputs.probation-release-name }}
       helm-dir: ${{ inputs.helm-dir }}
