@@ -4,9 +4,11 @@ name: Release tag
 # release can later be pinned by tag (image :vX.Y.Z + chart/values at the tag)
 # instead of by Build.<sha>.
 #
-# Patch-bumps the highest existing <prefix>X.Y.Z tag (initial-version when
-# none). App tags are independent of the Lib-v* tags created by bump_version,
-# which mirror the shared library version.
+# Bumps the highest existing <prefix>X.Y.Z tag (initial-version when none).
+# bump-strategy conventional (default) reads Conventional Commits since that
+# tag: "type!:" / "BREAKING CHANGE:" -> major, "feat:" -> minor, else patch.
+# App tags are independent of the Lib-v* tags created by bump_version, which
+# mirror the shared library version.
 #
 # Caller must grant `contents: write` (tag push uses GITHUB_TOKEN). Tags pushed
 # with GITHUB_TOKEN do not trigger further workflow runs.
@@ -22,6 +24,13 @@ on:
         description: Version used when no prefixed X.Y.Z tag exists yet
         type: string
         default: '1.0.0'
+      bump-strategy:
+        description: >-
+          conventional = bump from Conventional Commits since the previous
+          stable tag (feat -> minor, type! / BREAKING CHANGE -> major, else
+          patch); patch = always patch
+        type: string
+        default: 'conventional'
     outputs:
       tag:
         description: The release tag on this commit (e.g. v1.0.3)
@@ -29,6 +38,9 @@ on:
       previous-stable:
         description: The stable tag before this one (empty for the first release)
         value: ${{ jobs.tag.outputs.previous-stable }}
+      bump:
+        description: major | minor | patch | initial | existing (re-run)
+        value: ${{ jobs.tag.outputs.bump }}
 
 permissions:
   contents: write
@@ -43,6 +55,7 @@ jobs:
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       previous-stable: ${{ steps.tag.outputs.previous_stable }}
+      bump: ${{ steps.tag.outputs.bump }}
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -55,6 +68,7 @@ jobs:
         env:
           PREFIX: ${{ inputs.tag-prefix }}
           INITIAL: ${{ inputs.initial-version }}
+          STRATEGY: ${{ inputs.bump-strategy }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
@@ -63,6 +77,24 @@ jobs:
           GLOB="${PREFIX}[0-9]*.[0-9]*.[0-9]*"
           STRICT="^${PREFIX}[0-9]+\.[0-9]+\.[0-9]+$"
           TAG=""
+          BUMP=""
+
+          # Conventional Commits since $1: subject "type(scope)!:" or a
+          # "BREAKING CHANGE:" footer -> major; subject "feat:" -> minor;
+          # anything else -> patch.
+          bump_from_commits() {
+            local range="$1..HEAD" subjects bodies
+            subjects=$(git log --format=%s "${range}")
+            bodies=$(git log --format=%b "${range}")
+            if grep -qE '^[A-Za-z]+(\([^)]*\))?!:' <<< "${subjects}" \
+              || grep -qE '^[[:space:]]*BREAKING[ -]CHANGE:' <<< "${bodies}"; then
+              echo "major"
+            elif grep -qiE '^feat(\([^)]*\))?:' <<< "${subjects}"; then
+              echo "minor"
+            else
+              echo "patch"
+            fi
+          }
 
           for attempt in 1 2 3 4 5; do
             git fetch --force --tags --quiet origin
@@ -71,19 +103,30 @@ jobs:
             EXISTING=$(git tag --points-at HEAD -l "${GLOB}" --sort=-v:refname | grep -E "${STRICT}" | head -n1 || true)
             if [ -n "${EXISTING}" ]; then
               TAG="${EXISTING}"
+              BUMP="existing"
               echo "Commit already tagged: ${TAG}"
               break
             fi
 
             LATEST=$(git tag -l "${GLOB}" --sort=-v:refname | grep -E "${STRICT}" | head -n1 || true)
             if [ -z "${LATEST}" ]; then
+              BUMP="initial"
               CANDIDATE="${PREFIX}${INITIAL}"
             else
+              if [ "${STRATEGY}" = "conventional" ]; then
+                BUMP=$(bump_from_commits "${LATEST}")
+              else
+                BUMP="patch"
+              fi
               IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST#"${PREFIX}"}"
-              CANDIDATE="${PREFIX}${MAJOR}.${MINOR}.$((PATCH + 1))"
+              case "${BUMP}" in
+                major) CANDIDATE="${PREFIX}$((MAJOR + 1)).0.0" ;;
+                minor) CANDIDATE="${PREFIX}${MAJOR}.$((MINOR + 1)).0" ;;
+                *)     CANDIDATE="${PREFIX}${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+              esac
             fi
 
-            echo "Latest: ${LATEST:-none} -> candidate: ${CANDIDATE} (attempt ${attempt})"
+            echo "Latest: ${LATEST:-none} -> candidate: ${CANDIDATE} (${BUMP}, strategy ${STRATEGY}, attempt ${attempt})"
             git tag -a "${CANDIDATE}" -m "Release ${CANDIDATE}" HEAD
             if git push origin "refs/tags/${CANDIDATE}"; then
               TAG="${CANDIDATE}"
@@ -106,5 +149,6 @@ jobs:
           {
             echo "tag=${TAG}"
             echo "previous_stable=${PREVIOUS}"
+            echo "bump=${BUMP}"
           } >> "$GITHUB_OUTPUT"
-          echo "### Release tag: \`${TAG}\` (${GITHUB_SHA}), previous: \`${PREVIOUS:-none}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Release tag: \`${TAG}\` (${BUMP}) on ${GITHUB_SHA}, previous: \`${PREVIOUS:-none}\`" >> "$GITHUB_STEP_SUMMARY"

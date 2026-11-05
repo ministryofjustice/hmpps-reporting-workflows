@@ -130,6 +130,12 @@ on:
           rc-<branch>-<run> (no git tag). Caller must grant `contents: write`.
         type: boolean
         default: false
+      version-bump-strategy:
+        description: >-
+          conventional = version bump from Conventional Commits (feat -> minor,
+          type! / BREAKING CHANGE -> major, else patch); patch = always patch
+        type: string
+        default: 'conventional'
 
       # ── Optional Sentry (primary deploys only; default off) ───────────
       enable-sentry:
@@ -262,6 +268,8 @@ jobs:
     permissions:
       contents: write
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/release_tag.yml@test/tag-based-releases
+    with:
+      bump-strategy: ${{ inputs.version-bump-strategy }}
 
   # Probation lint jobs are always listed in needs:; when enable-probation
   # is false they are skipped — treat skipped as OK for the build gate.

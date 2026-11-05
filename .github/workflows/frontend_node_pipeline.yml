@@ -119,6 +119,12 @@ on:
           rc-<branch>-<run> (no git tag). Caller must grant `contents: write`.
         type: boolean
         default: false
+      version-bump-strategy:
+        description: >-
+          conventional = version bump from Conventional Commits (feat -> minor,
+          type! / BREAKING CHANGE -> major, else patch); patch = always patch
+        type: string
+        default: 'conventional'
 
       # ── Optional Sentry (primary deploys only; matches CircleCI MI-UI) ─
       enable-sentry:
@@ -281,6 +287,8 @@ jobs:
     permissions:
       contents: write
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/release_tag.yml@test/tag-based-releases
+    with:
+      bump-strategy: ${{ inputs.version-bump-strategy }}
 
   build_docker:
     name: Build multi-arch Docker image

@@ -33,6 +33,8 @@ jobs:
       # tag + GitHub Release; feature builds get image label rc-<branch>-<run>.
       # Also set `contents: write` in permissions above:
       # enable-release-tag: true
+      # Version bump from Conventional Commits (default) or always patch:
+      # version-bump-strategy: conventional
       # Release preprod/prod only via the releases repo (stable Releases):
       # deploy-preprod-prod: false
       # Optional Sentry release secret patch (primary deploys only):

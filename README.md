@@ -70,6 +70,37 @@ With `enable-release-tag: true` (caller grants `contents: write`):
 Deploys use the stable tag or RC label as the image tag (same image as
 `Build.<sha>`); chart and values come from the commit being built.
 
+**Version bumps (Conventional Commits).** The next stable version is worked
+out from the commits merged since the previous stable tag
+(`version-bump-strategy: conventional`, the default):
+
+| Commit / PR title (squash merge) | Bump | Example |
+|----------------------------------|------|---------|
+| `fix: …`, `chore: …`, `docs: …`, `deps: …`, or anything else | patch | `v1.4.2` -> `v1.4.3` |
+| `feat: …` / `feat(scope): …` | minor | `v1.4.2` -> `v1.5.0` |
+| `feat!: …` / `fix(api)!: …`, or a `BREAKING CHANGE:` footer | major | `v1.4.2` -> `v2.0.0` |
+
+The highest bump wins when several commits are merged. Unprefixed commits
+fall back to patch, so nothing blocks a release. To keep it reliable:
+
+- squash-merge PRs with the **PR title** as the commit message (repo
+  settings), so one PR is one Conventional Commit on `main`;
+- turn on the PR title check in `pull-request.yml`:
+
+  ```yaml
+  uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/pr_checks.yml@v1
+  with:
+    require-conventional-title: true   # fails PRs whose title isn't "type(scope)!: summary"
+  ```
+
+  Allowed types: `feat`, `fix`, `chore`, `docs`, `refactor`, `perf`, `test`,
+  `build`, `ci`, `style`, `revert`, `deps`. The check's summary shows the
+  bump the PR will cause.
+
+`version-bump-strategy: patch` keeps always-patch. For a one-off override,
+tag the `main` commit by hand and re-run its pipeline (see
+[`docs/versioning.md`](docs/versioning.md#app-release-tags-consumer-repos)).
+
 **Stable-only promotion.** Set `deploy-preprod-prod: false` so preprod/prod
 are reached only through the releases repo. A release pins only the tag. The
 app's `release.yml` ([template](templates/release-app.yml)) is dispatched
