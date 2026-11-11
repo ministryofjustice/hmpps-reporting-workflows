@@ -1,7 +1,8 @@
 name: Security veracode policy scan (proxy)
 
-# Thin wrapper around ministryofjustice/hmpps-github-actions — same shape
-# as security_veracode_pipeline_scan.yml, see that file for rationale.
+# Same shape as security_veracode_pipeline_scan.yml.
+# stack: gradle builds a jar. stack: node builds with hmpps-reporting-actions
+# and zips the output. The scan step still runs through hmpps-github-actions.
 
 on:
   workflow_call:
@@ -9,17 +10,28 @@ on:
       channel_id:
         type: string
         default: 'NO_SLACK'
+      stack:
+        description: gradle (jar) or node (npm build, zip the output)
+        type: string
+        default: gradle
       java_version:
         type: string
         default: '21'
+      node-version:
+        type: string
+        default: '24'
+      install-command:
+        type: string
+        default: 'npm run setup --no-audit'
       build-command:
+        description: Command used to build the artifact veracode will scan. Node callers can leave the Gradle default; the node job then runs npm run build.
         type: string
         default: 'BUILD_NUMBER=veracode ./gradlew assemble'
       build-artifact-name:
         type: string
         default: 'build-results'
       veracode-artifact-name:
-        description: Defaults to "<repo-name>-veracode.jar" when empty
+        description: Defaults to "<repo-name>-veracode.jar" for gradle and "source.zip" for node when empty
         type: string
         default: ''
 
@@ -31,6 +43,7 @@ permissions:
 jobs:
   create-artifact:
     name: Build the artifact for veracode to scan
+    if: inputs.stack != 'node'
     uses: ministryofjustice/hmpps-github-actions/.github/workflows/gradle_verify.yml@v2
     with:
       gradle-command: ${{ inputs.build-command }}
@@ -42,24 +55,78 @@ jobs:
       contents: read
       actions: read
 
+  create-node-artifact:
+    name: Build the Node artifact for veracode to scan
+    if: inputs.stack == 'node'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node and npm
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
+        with:
+          node-version: ${{ inputs.node-version }}
+          install-command: ${{ inputs.install-command }}
+
+      - name: Build
+        env:
+          GIT_REF: ${{ github.sha }}
+          BUILD_COMMAND: ${{ inputs.build-command }}
+        run: |
+          if [ "$BUILD_COMMAND" = "BUILD_NUMBER=veracode ./gradlew assemble" ]; then
+            BUILD_COMMAND="npm run build"
+          fi
+          bash -lc "$BUILD_COMMAND"
+
+      - name: Package scan artifact
+        run: |
+          paths=()
+          [ -d dist ] && paths+=(dist)
+          [ -f package.json ] && paths+=(package.json)
+          [ -f package-lock.json ] && paths+=(package-lock.json)
+          [ -d assets ] && paths+=(assets)
+          if [ ${#paths[@]} -eq 0 ]; then
+            echo "No Node build output to package" >&2
+            exit 1
+          fi
+          zip -r source.zip "${paths[@]}" -x "*node_modules*"
+
+      - name: Upload scan artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ inputs.build-artifact-name }}
+          path: source.zip
+          if-no-files-found: error
+
   resolve-artifact-name:
     name: Resolve veracode artifact name
-    needs: create-artifact
+    needs: [create-artifact, create-node-artifact]
+    if: |
+      always() &&
+      (needs.create-artifact.result == 'success' || needs.create-node-artifact.result == 'success')
     runs-on: ubuntu-latest
     outputs:
       name: ${{ steps.resolve.outputs.name }}
     steps:
       - id: resolve
+        env:
+          STACK: ${{ inputs.stack }}
         run: |
           NAME="${{ inputs.veracode-artifact-name }}"
           if [ -z "$NAME" ]; then
-            NAME="${{ github.event.repository.name }}-veracode.jar"
+            if [ "$STACK" = "node" ]; then
+              NAME="source.zip"
+            else
+              NAME="${{ github.event.repository.name }}-veracode.jar"
+            fi
           fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
   proxy:
     name: Project security veracode policy scan
-    needs: [create-artifact, resolve-artifact-name]
+    needs: [create-artifact, create-node-artifact, resolve-artifact-name]
+    if: always() && needs.resolve-artifact-name.result == 'success'
     permissions:
       contents: read
       actions: read
