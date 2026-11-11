@@ -22,6 +22,31 @@ repo after an actions tag exists so the SHA bump can ship behind `@v1`.
 - Recommended default for consumers: pin to the major tag (`@v1`), not a
   full version and never `@main`.
 
+## App release tags (consumer repos)
+
+Separate from this library's tags. Apps that set `enable-release-tag: true`
+get a `vX.Y.Z` tag on every `main` build (`release_tag.yml`), bumped from
+the highest strict `vX.Y.Z` tag (`v1.0.0` when none exists); re-runs reuse
+the commit's existing tag. The bump comes from Conventional Commits since
+that tag (`version-bump-strategy: conventional`, the default; see the README
+"Version bumps" section): `type!:` / `BREAKING CHANGE:` -> major, `feat:` ->
+minor, anything else -> patch. `version-bump-strategy: patch` always patches.
+
+Override by hand (rare): tag a `main` commit
+(`git tag -a v2.0.0 -m v2.0.0 <sha> && git push origin v2.0.0`), then re-run
+that commit's pipeline so the image is also pushed as `:v2.0.0` and the
+GitHub Release is published (the tag job reuses an existing tag).
+
+| Tag | Created by | Points at | Used for |
+|-----|-----------|-----------|----------|
+| `vX.Y.Z` (+ GitHub Release) | `release_tag.yml` / `github_release.yml` on main builds | the built `main` commit (image `:vX.Y.Z`) | releases board / `release.yml`; the only tags preprod/prod accept |
+| `rc-<branch>-<run>` | feature builds (image tag only, no git tag) | the feature commit's image | dev/test deploys, dev/test rollback |
+| `Lib-vX.Y.Z` | `bump_version.yml` | the lib-bump branch commit | tracking shared library bumps only |
+
+Recommended repo settings for apps using this: a tag ruleset on
+`refs/tags/v*` blocking update/delete (stable tags immutable), and "require
+branches to be up to date before merging" on `main`.
+
 ## What counts as a breaking change
 
 A change to `hmpps-reporting-workflows` requires a **major** version bump

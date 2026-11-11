@@ -41,10 +41,45 @@ on:
         description: grep pattern for the PR coverage comment body
         type: string
         default: '% Stmts'
+      require-conventional-title:
+        description: >-
+          Fail the PR unless its title is a Conventional Commit
+          ("type(scope)!: summary"). With squash merges the title drives the
+          release version bump (feat -> minor, ! -> major, else patch).
+        type: boolean
+        default: false
 
 permissions: {}
 
 jobs:
+  pr_title:
+    name: PR title (Conventional Commits)
+    if: inputs.require-conventional-title && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          TYPES='feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert|deps'
+          RE="^(${TYPES})(\([a-zA-Z0-9._/-]+\))?!?: .+"
+          if [[ "${TITLE}" =~ ${RE} ]]; then
+            case "${TITLE}" in
+              *'!:'*) BUMP="major" ;;
+              feat*)  BUMP="minor" ;;
+              *)      BUMP="patch" ;;
+            esac
+            echo "OK: '${TITLE}' -> ${BUMP} release on merge"
+            echo "### PR title OK, merging gives a **${BUMP}** version bump" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::PR title must follow Conventional Commits: '<type>(<scope>)!: <summary>'"
+            echo "::error::types: ${TYPES//|/, } — e.g. 'feat(reports): add export', 'fix: null check', 'feat!: drop v1 API'"
+            echo "::error::got: '${TITLE}'"
+            exit 1
+          fi
+
   checks:
     name: PR checks
     runs-on: ubuntu-latest

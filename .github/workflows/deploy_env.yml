@@ -68,6 +68,12 @@ on:
         description: Extra Helm values YAML content
         type: string
         default: ''
+      checkout-ref:
+        description: >-
+          Git ref (e.g. release tag v1.0.3) to check out for the Helm chart and
+          values. Defaults to the triggering ref.
+        type: string
+        default: ''
       helm-timeout:
         description: Helm upgrade --timeout value
         type: string
@@ -149,6 +155,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
+          ref: ${{ inputs.checkout-ref }}
           fetch-depth: 0
 
       # ── Resolve chart and release names ──────────────────────────────

@@ -47,6 +47,10 @@ on:
         description: Also push the :latest tag (disable on feature/PR builds)
         type: boolean
         default: true
+      extra-tags:
+        description: Additional image tags, space or newline separated (e.g. release tag v1.0.3)
+        type: string
+        default: ''
     secrets:
       # Optional. When set, mounted as BuildKit secret id=SENTRY_AUTH_TOKEN
       # for Dockerfiles that upload Sentry source maps (e.g. MI-UI).
@@ -114,6 +118,7 @@ jobs:
           IMAGE: ${{ inputs.docker-registry }}/${{ inputs.registry-org }}/${{ github.event.repository.name }}
           APP_VERSION: ${{ steps.version.outputs.app_version }}
           TAG_LATEST: ${{ inputs.tag-latest }}
+          EXTRA_TAGS: ${{ inputs.extra-tags }}
         run: |
           {
             echo "list<<EOF"
@@ -121,6 +126,9 @@ jobs:
             if [ "${TAG_LATEST}" = "true" ]; then
               echo "${IMAGE}:latest"
             fi
+            for t in ${EXTRA_TAGS}; do
+              echo "${IMAGE}:${t}"
+            done
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
