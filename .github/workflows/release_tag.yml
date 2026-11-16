@@ -7,8 +7,8 @@ name: Release tag
 # Bumps the highest existing <prefix>X.Y.Z tag (initial-version when none).
 # bump-strategy conventional (default) reads Conventional Commits since that
 # tag: "type!:" / "BREAKING CHANGE:" -> major, "feat:" -> minor, else patch.
-# App tags are independent of the Lib-v* tags created by bump_version, which
-# mirror the shared library version.
+# App tags are independent of optional Lib-v* bookmarks from bump_version
+# (only when create-lib-tag: true).
 #
 # Caller must grant `contents: write` (tag push uses GITHUB_TOKEN). Tags pushed
 # with GITHUB_TOKEN do not trigger further workflow runs.
