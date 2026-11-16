@@ -48,6 +48,20 @@ on:
           release version bump (feat -> minor, ! -> major, else patch).
         type: boolean
         default: false
+      enable-slsa:
+        description: >-
+          Node stack only. Run MoJ SLSA (Safe-Chain) before dependency install.
+          A blocked package fails this job.
+        type: boolean
+        default: false
+      slsa-package-exclusion:
+        description: Trusted packages excluded from Safe-Chain minimum-age filtering
+        type: string
+        default: ''
+      enable-pre-commit:
+        description: Node stack only. Run pre-commit run --all-files after install
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -118,12 +132,34 @@ jobs:
           gh pr comment ${{ github.event.pull_request.number }} --body "$(grep 'Test Coverage:' logs.txt -A6)"
 
       # ── Node ─────────────────────────────────────────────────────────
+      # SLSA must run before install so Safe-Chain intercepts npm.
+      - name: SLSA - supply chain attack mitigation
+        if: inputs.stack == 'node' && inputs.enable-slsa
+        uses: ministryofjustice/devsecops-actions/sca/slsa@7dc13c20e2bf541b8a77fa1320a04983b18846f6
+        with:
+          node-version: ${{ inputs.node-version }}
+          security-patch-package-exclusion: ${{ inputs.slsa-package-exclusion }}
+
       - name: Setup Node and npm
         if: inputs.stack == 'node'
         uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
         with:
           node-version: ${{ inputs.node-version }}
           install-command: ${{ inputs.install-command }}
+
+      - name: Setup Python
+        if: inputs.stack == 'node' && inputs.enable-pre-commit
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v5
+        with:
+          python-version: '3.x'
+
+      - name: Install pre-commit
+        if: inputs.stack == 'node' && inputs.enable-pre-commit
+        run: pip install pre-commit
+
+      - name: Run pre-commit checks
+        if: inputs.stack == 'node' && inputs.enable-pre-commit
+        run: pre-commit run --all-files
 
       - name: Calculate test coverage (Node)
         if: inputs.stack == 'node'
