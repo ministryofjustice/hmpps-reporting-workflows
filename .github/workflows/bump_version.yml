@@ -48,6 +48,10 @@ on:
       base-branch:
         type: string
         default: 'main'
+      create-lib-tag:
+        description: When true, also create/push a Lib-vX.Y.Z git tag for the bump commit
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -148,4 +152,6 @@ jobs:
           apply-command: ${{ steps.apply.outputs.command }}
           files-to-commit: ${{ steps.apply.outputs.files }}
           base-branch: ${{ inputs.base-branch }}
+          # Empty tag-prefix skips tagging; set create-lib-tag: true to restore Lib-v*.
+          tag-prefix: ${{ inputs.create-lib-tag && 'Lib-v' || '' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -26,6 +26,7 @@ jobs:
       # node-version: '24'
       # npm-package: '@ministryofjustice/hmpps-digital-prison-reporting-frontend'
       # run-slsa: true
+      # create-lib-tag: false  # set true to also push a Lib-vX.Y.Z git tag
       # resolve-command: ''   # shell that prints version on stdout
       # apply-command: ''     # use $VERSION for the resolved version
       # files-to-commit: ''
