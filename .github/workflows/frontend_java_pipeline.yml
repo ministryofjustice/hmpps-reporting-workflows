@@ -171,7 +171,8 @@ jobs:
     steps:
       - id: set
         env:
-          BRANCH: ${{ github.ref_name }}
+          # Prefer the PR source branch so labels are rc-<branch>-<run>, not rc-7-merge-<run>.
+          BRANCH: ${{ github.head_ref || github.ref_name }}
           IS_DEPLOY_REF: ${{ github.ref == inputs.deploy-ref }}
           ENABLE_RELEASE_TAG: ${{ inputs.enable-release-tag }}
           RUN_NUMBER: ${{ github.run_number }}
