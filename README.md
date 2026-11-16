@@ -125,9 +125,9 @@ a schedule. It deletes only versions older than N days whose tags are all
 `Build.*`/`rc-*`, never `vX.Y.Z`/`latest` or untagged (multi-arch) manifests.
 Defaults to dry-run; the repo's Actions access on the package needs Admin.
 
-App tags (`v*`) are separate from `Lib-v*` tags, which `bump_version` creates
-to mirror the shared library version on its bump branch. See
-[`digital-prison-reporting-releases`](https://github.com/ministryofjustice/digital-prison-reporting-releases)
+App tags (`v*`) are the release pins. `bump_version` can optionally create
+`Lib-v*` bookmarks when a caller sets `create-lib-tag: true` (default off).
+See [`digital-prison-reporting-releases`](https://github.com/ministryofjustice/digital-prison-reporting-releases)
 for the releases board.
 
 ### Optional Sentry (primary deploys)

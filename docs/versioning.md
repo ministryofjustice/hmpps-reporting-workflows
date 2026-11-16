@@ -41,7 +41,7 @@ GitHub Release is published (the tag job reuses an existing tag).
 |-----|-----------|-----------|----------|
 | `vX.Y.Z` (+ GitHub Release) | `release_tag.yml` / `github_release.yml` on main builds | the built `main` commit (image `:vX.Y.Z`) | releases board / `release.yml`; the only tags preprod/prod accept |
 | `rc-<branch>-<run>` | feature builds (image tag only, no git tag) | the feature commit's image | dev/test deploys, dev/test rollback |
-| `Lib-vX.Y.Z` | `bump_version.yml` | the lib-bump branch commit | tracking shared library bumps only |
+| `Lib-vX.Y.Z` (optional) | `bump_version.yml` when `create-lib-tag: true` (default off) | the lib-bump branch commit | optional bookmark of a shared-library bump; app releases use `vX.Y.Z` |
 
 Recommended repo settings for apps using this: a tag ruleset on
 `refs/tags/v*` blocking update/delete (stable tags immutable), and "require
