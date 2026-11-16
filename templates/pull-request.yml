@@ -26,3 +26,7 @@ jobs:
       # Require Conventional Commit PR titles ("feat(scope): …"); with squash
       # merges the title drives the release version bump:
       # require-conventional-title: true
+      # Node: SLSA before install + pre-commit (absorb legacy pr-raised.yml):
+      # enable-slsa: true
+      # slsa-package-exclusion: '@ministryofjustice/hmpps-digital-prison-reporting-frontend'
+      # enable-pre-commit: true
