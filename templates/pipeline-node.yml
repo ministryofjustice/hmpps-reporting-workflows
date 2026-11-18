@@ -42,4 +42,8 @@ jobs:
       # sentry-secret-name: your-app-sentry
       # Requires existing k8s secret (not managed by Cloud Platform Terraform).
       # For source maps, set repo/org secret SENTRY_AUTH_TOKEN (secrets: inherit).
+      # Optional Cypress (suites live in the app repo under cypress-tests/):
+      # enable-integration-tests: true
+      # enable-acceptance-tests: true
+      # Acceptance needs CYPRESS_* secrets + DEV IP allowlist access; gates TEST.
       slack-channel: 'dpr_cicd_approvals'

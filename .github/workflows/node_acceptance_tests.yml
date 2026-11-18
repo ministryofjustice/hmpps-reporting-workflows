@@ -1,0 +1,87 @@
+name: Node acceptance tests
+
+# Replaces CircleCI acceptance_test (post-DEV deploy Cypress against live URLs).
+# Requires the runner to reach Cloud Platform DEV (IP allowlist). Pass CYPRESS_*
+# secrets for apps that authenticate; demo-ui smoke tests need none.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '24'
+      install-command:
+        type: string
+        default: 'npm run setup --no-audit'
+      acceptance-test-command:
+        type: string
+        default: 'npm run acceptance-test'
+      warmup-seconds:
+        description: Wait after deploy before Cypress (CircleCI used 30)
+        type: string
+        default: '30'
+      artifact-paths:
+        type: string
+        default: |
+          cypress-tests/acceptance-tests/videos/**
+          cypress-tests/acceptance-tests/screenshots/**
+          test_results/**
+    secrets:
+      CYPRESS_USERNAME:
+        required: false
+      CYPRESS_PASSWORD:
+        required: false
+      CYPRESS_PROBATION_USERNAME:
+        required: false
+      CYPRESS_PROBATION_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Acceptance tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node and npm
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
+        with:
+          node-version: ${{ inputs.node-version }}
+          install-command: ${{ inputs.install-command }}
+
+      - name: Install Cypress OS dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxss1 libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev \
+            libnss3 libasound2t64 libxtst6 xauth xvfb
+
+      - name: Wait for deployed pods / ingress
+        env:
+          WARMUP: ${{ inputs.warmup-seconds }}
+        run: |
+          set -euo pipefail
+          echo "Waiting ${WARMUP}s for DEV deploy to settle"
+          sleep "${WARMUP}"
+
+      - name: Acceptance tests (Cypress)
+        env:
+          CYPRESS_USERNAME: ${{ secrets.CYPRESS_USERNAME }}
+          CYPRESS_PASSWORD: ${{ secrets.CYPRESS_PASSWORD }}
+          CYPRESS_PROBATION_USERNAME: ${{ secrets.CYPRESS_PROBATION_USERNAME }}
+          CYPRESS_PROBATION_PASSWORD: ${{ secrets.CYPRESS_PROBATION_PASSWORD }}
+        run: ${{ inputs.acceptance-test-command }}
+
+      - name: Upload Cypress / test artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: acceptance-test-artifacts
+          path: ${{ inputs.artifact-paths }}
+          if-no-files-found: ignore
