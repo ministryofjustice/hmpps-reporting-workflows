@@ -1,8 +1,8 @@
 name: Node Validate
 
 # Replaces CircleCI MI-UI jobs: build + unit_test (+ optional lint).
-# Integration / acceptance / Sentry are separate follow-ups — this workflow
-# covers the validate gate needed before helm lint + docker + deploy.
+# Cypress integration / acceptance live in node_integration_tests.yml and
+# node_acceptance_tests.yml (optional flags on frontend_node_pipeline).
 
 on:
   workflow_call:

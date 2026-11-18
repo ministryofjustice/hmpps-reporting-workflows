@@ -1,0 +1,174 @@
+name: Node integration tests
+
+# Replaces CircleCI integration_test (tools-ui / MI-UI):
+#   Redis + Wiremock + start-feature (+ optional probation) + Cypress int-test
+# Defaults match MoJ DPR Node apps; demo-ui can turn Redis/Wiremock/probation off.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: '24'
+      install-command:
+        type: string
+        default: 'npm run setup --no-audit'
+      build-command:
+        type: string
+        default: 'npm run build'
+      typecheck-command:
+        type: string
+        default: 'npm run typecheck'
+      run-typecheck:
+        type: boolean
+        default: true
+      int-test-command:
+        type: string
+        default: 'npm run int-test'
+      start-feature-command:
+        type: string
+        default: 'npm run start-feature'
+      start-feature-probation-command:
+        type: string
+        default: 'npm run start-feature:probation'
+      enable-start-probation:
+        description: Also start the probation feature app (CircleCI tools/MI-UI)
+        type: boolean
+        default: true
+      enable-wiremock:
+        type: boolean
+        default: true
+      wiremock-version:
+        type: string
+        default: '3.3.1'
+      wiremock-port:
+        type: string
+        default: '9091'
+      enable-redis:
+        type: boolean
+        default: true
+      artifact-paths:
+        description: Cypress videos/screenshots globs (newline-separated)
+        type: string
+        default: |
+          cypress-tests/**/videos/**
+          cypress-tests/**/screenshots/**
+          test_results/**
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        # Always declared; apps that do not need Redis simply ignore it.
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Setup Node and npm
+        uses: ministryofjustice/hmpps-reporting-actions/actions/setup-node-npm@71d35a95ebf19b07902d646d04014a8b5228e2a4 # v1.0.5
+        with:
+          node-version: ${{ inputs.node-version }}
+          install-command: ${{ inputs.install-command }}
+
+      - name: Install Cypress OS dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxss1 libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev \
+            libnss3 libasound2t64 libxtst6 xauth xvfb
+
+      - name: Build
+        env:
+          GIT_REF: ${{ github.sha }}
+        run: ${{ inputs.build-command }}
+
+      - name: Typecheck
+        if: inputs.run-typecheck
+        run: ${{ inputs.typecheck-command }}
+
+      - name: Install Java (Wiremock)
+        if: inputs.enable-wiremock
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Start Wiremock
+        if: inputs.enable-wiremock
+        env:
+          WIREMOCK_VERSION: ${{ inputs.wiremock-version }}
+          WIREMOCK_PORT: ${{ inputs.wiremock-port }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o wiremock.jar \
+            "https://repo1.maven.org/maven2/org/wiremock/wiremock-standalone/${WIREMOCK_VERSION}/wiremock-standalone-${WIREMOCK_VERSION}.jar"
+          java -jar wiremock.jar --port "${WIREMOCK_PORT}" >wiremock.log 2>&1 &
+          echo "Started Wiremock on :${WIREMOCK_PORT}"
+
+      - name: Start feature app (primary)
+        run: |
+          set -euo pipefail
+          ${{ inputs.start-feature-command }} >feature-app.log 2>&1 &
+          echo "Started: ${{ inputs.start-feature-command }}"
+
+      - name: Start feature app (probation)
+        if: inputs.enable-start-probation
+        run: |
+          set -euo pipefail
+          ${{ inputs.start-feature-probation-command }} >feature-app-probation.log 2>&1 &
+          echo "Started: ${{ inputs.start-feature-probation-command }}"
+
+      - name: Wait for apps
+        run: sleep 8
+
+      - name: Redis readiness (optional)
+        if: inputs.enable-redis
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 30); do
+            if (echo >/dev/tcp/127.0.0.1/6379) >/dev/null 2>&1; then
+              echo "Redis is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Redis did not become ready" >&2
+          exit 1
+
+      - name: Integration tests (Cypress)
+        run: ${{ inputs.int-test-command }}
+
+      - name: Upload Cypress / test artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: integration-test-artifacts
+          path: ${{ inputs.artifact-paths }}
+          if-no-files-found: ignore
+
+      - name: Upload app logs on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: integration-app-logs
+          path: |
+            feature-app.log
+            feature-app-probation.log
+            wiremock.log
+          if-no-files-found: ignore

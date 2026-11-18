@@ -144,6 +144,47 @@ on:
         type: string
         default: ''
 
+      # ── Optional Cypress (defaults off — non-breaking) ───────────────
+      enable-integration-tests:
+        description: Run Cypress int-test (local Wiremock/apps) before docker/deploy
+        type: boolean
+        default: false
+      integration-enable-wiremock:
+        type: boolean
+        default: true
+      integration-enable-start-probation:
+        type: boolean
+        default: true
+      integration-enable-redis:
+        type: boolean
+        default: true
+      integration-run-typecheck:
+        type: boolean
+        default: true
+      integration-wiremock-version:
+        type: string
+        default: '3.3.1'
+      integration-int-test-command:
+        type: string
+        default: 'npm run int-test'
+      integration-start-feature-command:
+        type: string
+        default: 'npm run start-feature'
+      integration-start-feature-probation-command:
+        type: string
+        default: 'npm run start-feature:probation'
+
+      enable-acceptance-tests:
+        description: Run Cypress acceptance against DEV after DEV deploys
+        type: boolean
+        default: false
+      acceptance-test-command:
+        type: string
+        default: 'npm run acceptance-test'
+      acceptance-warmup-seconds:
+        type: string
+        default: '30'
+
 permissions:
   contents: read
   packages: write
@@ -188,6 +229,25 @@ jobs:
       build-command: ${{ inputs.build-command }}
       lint-command: ${{ inputs.lint-command }}
       unit-test-command: ${{ inputs.unit-test-command }}
+
+  # CircleCI: integration_test after build, required before deploy.
+  integration_tests:
+    name: Integration tests
+    if: inputs.enable-integration-tests
+    needs: [node_validate]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_integration_tests.yml@test/tag-based-releases
+    with:
+      node-version: ${{ inputs.node-version }}
+      install-command: ${{ inputs.install-command }}
+      build-command: ${{ inputs.build-command }}
+      run-typecheck: ${{ inputs.integration-run-typecheck }}
+      int-test-command: ${{ inputs.integration-int-test-command }}
+      start-feature-command: ${{ inputs.integration-start-feature-command }}
+      start-feature-probation-command: ${{ inputs.integration-start-feature-probation-command }}
+      enable-start-probation: ${{ inputs.integration-enable-start-probation }}
+      enable-wiremock: ${{ inputs.integration-enable-wiremock }}
+      wiremock-version: ${{ inputs.integration-wiremock-version }}
+      enable-redis: ${{ inputs.integration-enable-redis }}
 
   helm_lint_primary_dev:
     name: Helm lint primary (dev)
@@ -266,6 +326,7 @@ jobs:
       inputs.enable-release-tag &&
       github.ref == inputs.deploy-ref &&
       needs.node_validate.result == 'success' &&
+      (needs.integration_tests.result == 'success' || !inputs.enable-integration-tests) &&
       needs.helm_lint_primary_dev.result == 'success' &&
       needs.helm_lint_primary_test.result == 'success' &&
       needs.helm_lint_primary_preprod.result == 'success' &&
@@ -276,6 +337,7 @@ jobs:
       contains(fromJSON('["success","skipped"]'), needs.helm_lint_probation_prod.result)
     needs:
       - node_validate
+      - integration_tests
       - helm_lint_primary_dev
       - helm_lint_primary_test
       - helm_lint_primary_preprod
@@ -296,6 +358,7 @@ jobs:
       always() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       needs.node_validate.result == 'success' &&
+      (needs.integration_tests.result == 'success' || !inputs.enable-integration-tests) &&
       needs.helm_lint_primary_dev.result == 'success' &&
       needs.helm_lint_primary_test.result == 'success' &&
       needs.helm_lint_primary_preprod.result == 'success' &&
@@ -308,6 +371,7 @@ jobs:
       contains(fromJSON('["success","skipped"]'), needs.release_tag.result)
     needs:
       - node_validate
+      - integration_tests
       - helm_lint_primary_dev
       - helm_lint_primary_test
       - helm_lint_primary_preprod
@@ -375,13 +439,31 @@ jobs:
       sentry-secret-key: ${{ inputs.sentry-secret-key }}
       sentry-release-sha: ${{ inputs.sentry-release-sha || github.sha }}
 
+  # CircleCI: acceptance_test after deploy_dev (+ probation_dev), gates further promotes.
+  acceptance_tests:
+    name: Acceptance tests
+    if: |
+      !cancelled() &&
+      inputs.enable-acceptance-tests &&
+      needs.deploy_primary_dev.result == 'success' &&
+      contains(fromJSON('["success","skipped"]'), needs.deploy_probation_dev.result)
+    needs: [deploy_primary_dev, deploy_probation_dev]
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_acceptance_tests.yml@test/tag-based-releases
+    secrets: inherit
+    with:
+      node-version: ${{ inputs.node-version }}
+      install-command: ${{ inputs.install-command }}
+      acceptance-test-command: ${{ inputs.acceptance-test-command }}
+      warmup-seconds: ${{ inputs.acceptance-warmup-seconds }}
+
   deploy_primary_test:
     name: Deploy primary → test
     if: |
       !cancelled() &&
       (github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches) &&
-      needs.deploy_primary_dev.result == 'success'
-    needs: [deploy_primary_dev, app_version, release_tag]
+      needs.deploy_primary_dev.result == 'success' &&
+      (needs.acceptance_tests.result == 'success' || !inputs.enable-acceptance-tests)
+    needs: [deploy_primary_dev, acceptance_tests, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
@@ -403,8 +485,9 @@ jobs:
       !cancelled() &&
       inputs.deploy-preprod-prod &&
       (github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches) &&
-      needs.deploy_primary_dev.result == 'success'
-    needs: [deploy_primary_dev, app_version, release_tag]
+      needs.deploy_primary_dev.result == 'success' &&
+      (needs.acceptance_tests.result == 'success' || !inputs.enable-acceptance-tests)
+    needs: [deploy_primary_dev, acceptance_tests, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
@@ -474,8 +557,9 @@ jobs:
       (github.ref == inputs.deploy-ref || inputs.deploy-test-on-feature-branches) &&
       inputs.enable-probation &&
       needs.deploy_probation_dev.result == 'success' &&
-      needs.helm_lint_probation_test.result == 'success'
-    needs: [deploy_probation_dev, helm_lint_probation_test, app_version, release_tag]
+      needs.helm_lint_probation_test.result == 'success' &&
+      (needs.acceptance_tests.result == 'success' || !inputs.enable-acceptance-tests)
+    needs: [deploy_probation_dev, acceptance_tests, helm_lint_probation_test, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
@@ -495,8 +579,9 @@ jobs:
       (github.ref == inputs.deploy-ref || inputs.deploy-preprod-on-feature-branches) &&
       inputs.enable-probation &&
       needs.deploy_probation_dev.result == 'success' &&
-      needs.helm_lint_probation_preprod.result == 'success'
-    needs: [deploy_probation_dev, helm_lint_probation_preprod, app_version, release_tag]
+      needs.helm_lint_probation_preprod.result == 'success' &&
+      (needs.acceptance_tests.result == 'success' || !inputs.enable-acceptance-tests)
+    needs: [deploy_probation_dev, acceptance_tests, helm_lint_probation_preprod, app_version, release_tag]
     uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/deploy_env.yml@test/tag-based-releases
     secrets: inherit
     with:
