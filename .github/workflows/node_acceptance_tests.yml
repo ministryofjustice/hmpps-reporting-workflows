@@ -62,7 +62,10 @@ jobs:
           node-version: ${{ inputs.node-version }}
           install-command: ${{ inputs.install-command }}
 
+      # GitHub-hosted only. hmpps-github-actions-runner sets "no new privileges",
+      # so sudo apt-get fails there; those images already ship Cypress OS libs.
       - name: Install Cypress OS dependencies
+        if: ${{ !contains(fromJSON(inputs.runs-on), 'self-hosted') }}
         run: |
           set -euo pipefail
           sudo apt-get update
