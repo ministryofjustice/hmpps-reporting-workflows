@@ -45,5 +45,7 @@ jobs:
       # Optional Cypress (suites live in the app repo under cypress-tests/):
       # enable-integration-tests: true
       # enable-acceptance-tests: true
-      # Acceptance needs CYPRESS_* secrets + DEV IP allowlist access; gates TEST.
+      # Acceptance needs DEV network access (prefer self-hosted runner group) and
+      # CYPRESS_* secrets when the app authenticates; gates TEST/preprod:
+      # acceptance-runs-on: '["self-hosted","Linux","X64","hmpps-github-actions-runner"]'
       slack-channel: 'dpr_cicd_approvals'

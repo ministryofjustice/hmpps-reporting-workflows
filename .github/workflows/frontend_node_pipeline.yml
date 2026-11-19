@@ -184,6 +184,12 @@ on:
       acceptance-warmup-seconds:
         type: string
         default: '30'
+      # JSON array passed to node_acceptance_tests runs-on. Prefer self-hosted
+      # when the app repo is in the hmpps-github-actions-runner group.
+      acceptance-runs-on:
+        description: JSON array of runner labels for acceptance tests
+        type: string
+        default: '["ubuntu-latest"]'
 
 permissions:
   contents: read
@@ -448,13 +454,15 @@ jobs:
       needs.deploy_primary_dev.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.deploy_probation_dev.result)
     needs: [deploy_primary_dev, deploy_probation_dev]
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_acceptance_tests.yml@test/tag-based-releases
+    # Trial branch only — pairs with acceptance-runs-on. Other nested jobs stay on test/tag-based-releases.
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_acceptance_tests.yml@feat/acceptance-self-hosted-runner
     secrets: inherit
     with:
       node-version: ${{ inputs.node-version }}
       install-command: ${{ inputs.install-command }}
       acceptance-test-command: ${{ inputs.acceptance-test-command }}
       warmup-seconds: ${{ inputs.acceptance-warmup-seconds }}
+      runs-on: ${{ inputs.acceptance-runs-on }}
 
   deploy_primary_test:
     name: Deploy primary → test

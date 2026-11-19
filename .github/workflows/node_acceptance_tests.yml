@@ -1,8 +1,9 @@
 name: Node acceptance tests
 
 # Replaces CircleCI acceptance_test (post-DEV deploy Cypress against live URLs).
-# Requires the runner to reach Cloud Platform DEV (IP allowlist). Pass CYPRESS_*
-# secrets for apps that authenticate; demo-ui smoke tests need none.
+# Requires the runner to reach Cloud Platform DEV (IP allowlist / self-hosted
+# hmpps-github-actions-runner). Pass CYPRESS_* secrets for apps that
+# authenticate; demo-ui smoke tests need none.
 
 on:
   workflow_call:
@@ -20,6 +21,13 @@ on:
         description: Wait after deploy before Cypress (CircleCI used 30)
         type: string
         default: '30'
+      # JSON array for runs-on. Use self-hosted labels when the repo is in the
+      # hmpps-github-actions-runner group, e.g.
+      # '["self-hosted","Linux","X64","hmpps-github-actions-runner"]'
+      runs-on:
+        description: JSON array of GitHub Actions runner labels
+        type: string
+        default: '["ubuntu-latest"]'
       artifact-paths:
         type: string
         default: |
@@ -42,7 +50,7 @@ permissions:
 jobs:
   acceptance:
     name: Acceptance tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
 
     steps:
       - name: Checkout
