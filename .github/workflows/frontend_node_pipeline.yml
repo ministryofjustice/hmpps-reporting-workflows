@@ -454,8 +454,7 @@ jobs:
       needs.deploy_primary_dev.result == 'success' &&
       contains(fromJSON('["success","skipped"]'), needs.deploy_probation_dev.result)
     needs: [deploy_primary_dev, deploy_probation_dev]
-    # Trial branch only — pairs with acceptance-runs-on. Other nested jobs stay on test/tag-based-releases.
-    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_acceptance_tests.yml@feat/acceptance-self-hosted-runner
+    uses: ministryofjustice/hmpps-reporting-workflows/.github/workflows/node_acceptance_tests.yml@test/tag-based-releases
     secrets: inherit
     with:
       node-version: ${{ inputs.node-version }}
