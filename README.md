@@ -33,7 +33,9 @@ Use **workflow_dispatch** for minor/major bumps.
     `docker_build.yml`, `deploy_env.yml` — primitives
   - `node_integration_tests.yml`, `node_acceptance_tests.yml` — optional Cypress
     (flags on `frontend_node_pipeline`: `enable-integration-tests`,
-    `enable-acceptance-tests`; acceptance gates TEST/preprod deploys)
+    `enable-acceptance-tests`, `acceptance-runs-on`; acceptance gates
+    TEST/preprod deploys; use self-hosted `hmpps-github-actions-runner` labels
+    when the app repo is in that runner group)
   - `security_*.yml` — proxies wrapping `hmpps-github-actions`
   - `security_drift_check.yml` — upstream pin drift guard
   - `validate.yml` — actionlint, shellcheck, unit tests
