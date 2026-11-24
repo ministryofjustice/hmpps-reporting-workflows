@@ -93,7 +93,7 @@ on:
         type: string
         default: 'refs/heads/main'
       deploy-dev-on-feature-branches:
-        description: Build image and deploy primary + probation DEV on non-main branches
+        description: Deploy primary + probation DEV on non-main branches (Docker still builds on every PR)
         type: boolean
         default: true
       deploy-test-on-feature-branches:
@@ -358,11 +358,12 @@ jobs:
     with:
       bump-strategy: ${{ inputs.version-bump-strategy }}
 
+  # Always build after checks (CircleCI build_docker_test on PRs). Push only when
+  # deploying: main (deploy-ref) or feature DEV deploy enabled. PR-only = build, no push.
   build_docker:
     name: Build multi-arch Docker image
     if: |
       always() &&
-      (github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches) &&
       needs.node_validate.result == 'success' &&
       (needs.integration_tests.result == 'success' || !inputs.enable-integration-tests) &&
       needs.helm_lint_primary_dev.result == 'success' &&
@@ -395,7 +396,7 @@ jobs:
       docker-registry: ${{ inputs.docker-registry }}
       registry-org: ${{ inputs.registry-org }}
       additional-docker-build-args: ${{ inputs.additional-docker-build-args }}
-      push: true
+      push: ${{ github.ref == inputs.deploy-ref || inputs.deploy-dev-on-feature-branches }}
       tag-latest: ${{ github.ref == inputs.deploy-ref }}
       # Stable tag on deploy-ref, image-only RC label elsewhere.
       extra-tags: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label }}

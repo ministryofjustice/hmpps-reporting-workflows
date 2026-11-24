@@ -139,11 +139,13 @@ jobs:
       #   --tag "${IMAGE_NAME}:latest"
       #   --label maintainer, app.version, build.version, build.gitref
       #   --push
+      # Multi-arch export needs a registry push. PR dry-runs (push=false) build
+      # linux/amd64 only — same idea as CircleCI build_docker_test publish:false.
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ inputs.dockerfile-dir }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ inputs.push == true && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           pull: true
           push: ${{ inputs.push }}
           tags: ${{ steps.tags.outputs.list }}
