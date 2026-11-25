@@ -11,6 +11,12 @@
 # preprod/prod: release-tag only, and it must have a published, non-prerelease
 # GitHub Release. dev/test may also use app-version (Build.<sha> / rc-* label)
 # + checkout-ref (commit SHA), e.g. to roll back to an earlier feature build.
+#
+# Dual prison + probation charts: keep two jobs (prison / probation). The
+# releases repo passes overlays from:
+#   config/values-<env>.yaml            → release-values-yaml (prison)
+#   config/values-probation-<env>.yaml  → probation-release-values-yaml
+# Wire the probation job's release-values-yaml to inputs.probation-release-values-yaml.
 # ============================================================================
 
 name: Release
@@ -53,7 +59,12 @@ on:
         required: false
         default: ''
       release-values-yaml:
-        description: Optional extra Helm values YAML (from releases config/)
+        description: Optional prison Helm values YAML (releases config/values-<env>.yaml)
+        type: string
+        required: false
+        default: ''
+      probation-release-values-yaml:
+        description: Optional probation Helm values YAML (releases config/values-probation-<env>.yaml)
         type: string
         required: false
         default: ''
