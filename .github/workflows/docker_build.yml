@@ -1,24 +1,17 @@
 name: Docker Build and Push
 
-# Replaces CircleCI custom job: build_multiplatform_docker_job
-# Used by: hmpps-digital-prison-reporting-mi
+# Shared Docker build for Node and Java pipelines.
 #
-# CircleCI source equivalent:
-#   build_multiplatform_docker_job:
-#     docker:
-#       - image: cimg/base:stable
-#     resource_class: small
-#     steps:
-#       - checkout
-#       - setup_remote_docker: docker_layer_caching: true
-#       - mem/remember: APP_VERSION = "Build.${CIRCLE_SHA1}"
-#       - docker buildx build --platform linux/amd64,linux/arm64
-#           --tag "${IMAGE_NAME}:${APP_VERSION}"
-#           --tag "${IMAGE_NAME}:latest"
-#           --push
+# CircleCI equivalents:
+#   Node UIs (tools-ui, mi-ui, demo-ui): hmpps/build_docker → linux/amd64 only
+#   Java (tools-api, mi): build_multiplatform_docker_job → linux/amd64,linux/arm64
 #
-# Key change: image registry changed from quay.io/hmpps/ to ghcr.io/ministryofjustice/
-# The app version format Build.<SHA> is preserved to match existing helm values expectations.
+# Callers pass `platforms`. Default is amd64-only (Node / orb parity). Java
+# pipelines pass linux/amd64,linux/arm64. PR dry-runs (push=false) always
+# force amd64 — multi-arch export needs a registry push.
+#
+# Registry: quay.io/hmpps/ → ghcr.io/ministryofjustice/
+# App version format Build.<SHA> preserved for helm values.
 
 on:
   workflow_call:
@@ -51,6 +44,12 @@ on:
         description: Additional image tags, space or newline separated (e.g. release tag v1.0.3)
         type: string
         default: ''
+      platforms:
+        description: >
+          Build platforms when push=true (e.g. linux/amd64 or linux/amd64,linux/arm64).
+          Ignored when push=false — always linux/amd64 for PR dry-runs.
+        type: string
+        default: 'linux/amd64'
     secrets:
       # Optional. When set, mounted as BuildKit secret id=SENTRY_AUTH_TOKEN
       # for Dockerfiles that upload Sentry source maps (e.g. MI-UI).
@@ -70,11 +69,12 @@ permissions:
 
 jobs:
   build:
-    name: Build multi-arch Docker image
+    name: Build Docker image
     runs-on: ubuntu-latest
 
     outputs:
       app_version: ${{ steps.version.outputs.app_version }}
+      platforms: ${{ steps.platforms.outputs.platforms }}
 
     steps:
       # ── Checkout ─────────────────────────────────────────────────────
@@ -90,6 +90,28 @@ jobs:
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
 
+      # ── Platforms ────────────────────────────────────────────────────
+      # push=false → amd64 only (CircleCI build_docker_test publish:false).
+      # push=true  → caller platforms (Node amd64; Java multi-arch).
+      - name: Resolve platforms
+        id: platforms
+        env:
+          PUSH: ${{ inputs.push }}
+          REQUESTED: ${{ inputs.platforms }}
+        run: |
+          if [ "${PUSH}" = "true" ]; then
+            PLATFORMS="${REQUESTED:-linux/amd64}"
+          else
+            PLATFORMS="linux/amd64"
+          fi
+          echo "platforms=${PLATFORMS}" >> "$GITHUB_OUTPUT"
+          if [[ "${PLATFORMS}" == *arm64* ]]; then
+            echo "multi_arch=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "multi_arch=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Building platforms: ${PLATFORMS} (push=${PUSH})"
+
       # ── Docker registry login ────────────────────────────────────────
       # Matches CircleCI: docker login -u="${QUAYIO_USERNAME}" -p="${QUAYIO_PASSWORD}" quay.io
       # Changed: GHCR login using GITHUB_TOKEN (no separate credentials needed)
@@ -100,9 +122,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Multi-arch buildx setup ──────────────────────────────────────
-      # Matches CircleCI: docker buildx create --platform linux/arm64,linux/amd64
+      # ── Buildx setup (QEMU only when arm64 is requested) ─────────────
       - name: Set up QEMU (multi-arch support)
+        if: steps.platforms.outputs.multi_arch == 'true'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
         with:
           platforms: linux/amd64,linux/arm64
@@ -110,7 +132,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
         with:
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ steps.platforms.outputs.platforms }}
 
       - name: Compute image tags
         id: tags
@@ -133,19 +155,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # ── Build and push ───────────────────────────────────────────────
-      # Matches CircleCI: docker buildx build
-      #   --platform linux/amd64,linux/arm64 --pull --progress plain
-      #   --tag "${IMAGE_NAME}:${APP_VERSION}"
-      #   --tag "${IMAGE_NAME}:latest"
-      #   --label maintainer, app.version, build.version, build.gitref
-      #   --push
-      # Multi-arch export needs a registry push. PR dry-runs (push=false) build
-      # linux/amd64 only — same idea as CircleCI build_docker_test publish:false.
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ inputs.dockerfile-dir }}
-          platforms: ${{ inputs.push == true && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: ${{ steps.platforms.outputs.platforms }}
           pull: true
           push: ${{ inputs.push }}
           tags: ${{ steps.tags.outputs.list }}

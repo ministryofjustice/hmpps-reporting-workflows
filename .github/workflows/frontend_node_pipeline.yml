@@ -360,8 +360,9 @@ jobs:
 
   # Always build after checks (CircleCI build_docker_test on PRs). Push only when
   # deploying: main (deploy-ref) or feature DEV deploy enabled. PR-only = build, no push.
+  # Platforms: linux/amd64 only — matches CircleCI hmpps/build_docker (not multi-arch).
   build_docker:
-    name: Build multi-arch Docker image
+    name: Build Docker image
     if: |
       always() &&
       needs.node_validate.result == 'success' &&
@@ -400,6 +401,7 @@ jobs:
       tag-latest: ${{ github.ref == inputs.deploy-ref }}
       # Stable tag on deploy-ref, image-only RC label elsewhere.
       extra-tags: ${{ needs.release_tag.outputs.tag || needs.app_version.outputs.rc-label }}
+      platforms: linux/amd64
 
   # Published only once the image exists, so every Release is deployable.
   github_release:
